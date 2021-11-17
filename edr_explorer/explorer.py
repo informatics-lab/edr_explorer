@@ -149,7 +149,7 @@ class EDRExplorer(param.Parameterized):
         self.pc_times.value = plot_control_times[0]
 
         plot_control_params = list(param_names)
-        self.pc_params.options = plot_control_params
+        self.pc_params.options = list(filter(lambda o: o[1] in plot_control_params, self.datasets.options))
         self.pc_params.value = plot_control_params[0]
 
         self._enable_plot_controls()
