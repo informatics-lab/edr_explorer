@@ -6,6 +6,7 @@ import numpy as np
 
 from .lookup import CRS_LOOKUP, TRS_LOOKUP
 
+
 class EDRInterface(object):
     """
     An interface to an EDR Server that can navigate the query structure to
