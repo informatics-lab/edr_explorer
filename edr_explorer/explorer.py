@@ -4,6 +4,7 @@ import numpy as np
 
 import geoviews as gv
 import holoviews as hv
+from holoviews.plotting.util import color_intervals
 import panel as pn
 import param
 
@@ -45,6 +46,7 @@ class EDRExplorer(param.Parameterized):
         self._data_getter_fn = None
         self._coords = None
         self._dataset = None
+        self._custom_colours = None
 
         self.connect_button.on_click(self._load_collections)
         self.submit_button.on_click(self._request_plot_data)
@@ -157,10 +159,10 @@ class EDRExplorer(param.Parameterized):
     def _plot_change(self, change):
         param = self.pc_params.value
         t = self.pc_times.value
-        # Make sure both widgets are populated.
+        # Make sure both plot control widgets are populated.
         if param is not None and t is not None:
             tidx = self.start_time.options.index(t)
-            self._data_array = self._data_getter_fn(param, {"t": tidx})
+            self._data_array, self._custom_colours = self._data_getter_fn(param, {"t": tidx})
             self._dataset = True
 
     @param.depends('_data_array')
@@ -172,7 +174,15 @@ class EDRExplorer(param.Parameterized):
                 ["latitude", "longitude"],
                 self.pc_params.value)
             gds = ds.to(gv.Dataset, crs=ccrs.PlateCarree())
-            showable = tiles * gds.to(gv.Image, ['longitude', 'latitude']).opts(cmap="viridis", alpha=0.75)
+            if self._custom_colours is not None:
+                cmap, _ = color_intervals(
+                    self._custom_colours["colours"],
+                    self._custom_colours["values"],
+                    N=len(self._custom_colours["colours"])
+                )
+            else:
+                cmap = "viridis"
+            showable = tiles * gds.to(gv.Image, ['longitude', 'latitude']).opts(cmap=cmap, alpha=0.9)
         else:
             showable = tiles
         return showable

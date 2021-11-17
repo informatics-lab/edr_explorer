@@ -152,8 +152,19 @@ class EDRInterface(object):
             params_dict[param_id] = {"label": en_label, "units": units}
         return params_dict
 
+    def _build_custom_cmap(self, data_json, param_name):
+        try:
+            categories = data_json["parameters"][param_name]["categoryEncoding"]
+        except KeyError:
+            result = None
+        else:
+            colours = list(categories.keys())
+            values = list(categories.values())
+            high_value = values[-1] + (values[-1] - values[-2])
+            result = {"colours": colours, "values": values+[high_value]}
+        return result
+
     def _build_data_array(self, data_json):
-        params = list(data_json["ranges"].keys())
         def data_getter(param_name, template_params):
             param_info = data_json["ranges"][param_name]
             param_type = param_info["type"]
@@ -163,7 +174,8 @@ class EDRInterface(object):
                 data = np.array(r["values"], dtype=r['dataType']).reshape(r["shape"])
             else:
                 raise NotImplementedError(f"Cannot process parameter type {param_type!r}")
-            return data
+            preferred_palette = self._build_custom_cmap(data_json, param_name)
+            return data, preferred_palette
         return data_getter
 
     def _build_coord_points(self, d):
