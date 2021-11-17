@@ -25,6 +25,8 @@ class EDRExplorer(param.Parameterized):
 
     # Dataset attribute.
     _data_array = param.Array(np.array([np.nan]))
+    tap = hv.streams.SingleTap()
+    _tap_str = pn.pane.Str("")
 
     connect_button = widgets.Button(description="Connect")
     submit_button = widgets.Button(description="Submit", disabled=True)
@@ -53,6 +55,8 @@ class EDRExplorer(param.Parameterized):
         self.pc_times.observe(self._plot_change, names='value')
         self.pc_params.observe(self._plot_change, names='value')
 
+        self.tap_plot = hv.DynamicMap(self.plot_line, streams=[self.tap])
+
     @property
     def edr_interface(self):
         return self._edr_interface
@@ -65,8 +69,8 @@ class EDRExplorer(param.Parameterized):
     def layout(self):
         connect_row = pn.Row(self.coll_uri, self.connect_button)
         control_row = pn.Row(self.wbox, self.submit_button, align=("end", "start"))
-        plot_col = pn.Column(self.plot, self.pwbox)
-        return pn.Row(pn.Column(connect_row, control_row), plot_col).servable()
+        plot_col = pn.Column(self.plot_map, self.pwbox)
+        return pn.Row(pn.Column(connect_row, control_row, pn.panel(self.tap), self.tap_plot), plot_col).servable()
 
     def _load_collections(self, event):
         """
@@ -138,12 +142,13 @@ class EDRExplorer(param.Parameterized):
         end_date = self.end_time.value
 
         # Make data and coords request.
-        data_getter, coords = self.edr_interface.get_data(
-            coll_id, locations, param_names, start_date, end_date)
+        data_getter, coords = self.edr_interface.request_locations(
+            coll_id, locations, param_names, start_date, end_date
+        )
         self._data_getter_fn = data_getter
         self._coords = coords
 
-        # Generate and enable the plot controls.
+        # Generate and enable the plot controls.
         plot_control_times = list(coords["t"])
         self.pc_times.options = plot_control_times
         self.pc_times.value = plot_control_times[0]
@@ -157,6 +162,7 @@ class EDRExplorer(param.Parameterized):
     def _plot_change(self, change):
         param = self.pc_params.value
         t = self.pc_times.value
+
         # Make sure both widgets are populated.
         if param is not None and t is not None:
             tidx = self.start_time.options.index(t)
@@ -164,7 +170,7 @@ class EDRExplorer(param.Parameterized):
             self._dataset = True
 
     @param.depends('_data_array')
-    def plot(self):
+    def plot_map(self):
         tiles = gv.tile_sources.Wikipedia.opts(width=800, height=600)
         if self._dataset is not None:
             ds = hv.Dataset(
@@ -175,4 +181,33 @@ class EDRExplorer(param.Parameterized):
             showable = tiles * gds.to(gv.Image, ['longitude', 'latitude']).opts(cmap="viridis", alpha=0.75)
         else:
             showable = tiles
+        self.tap.source = tiles
         return showable
+
+    def plot_line(self, x, y):
+        print("Tap!")
+        if self._dataset is not None:
+            plon, plat = ccrs.PlateCarree().transform_point(x, y, ccrs.Mercator())
+            # Get selection widgets state for request.
+            coll_id = self.coll.value
+            param_names = self.datasets.value
+            start_date = self.start_time.value
+            end_date = self.end_time.value
+
+            coords_dict, points_dict = self.edr_interface.request_points(
+                plon, plat, coll_id, param_names, start_date, end_date)
+
+            kdims = list(coords_dict.keys())
+            kdimpoints = list(coords_dict.values())
+
+            curves = []
+            for name, points in points_dict.items():
+                ds = hv.Dataset((*kdimpoints, points), kdims, name)
+                curve = ds.to(hv.Curve, kdims, label=name)
+                curves.append(curve)
+                
+            result = hv.Overlay(curves).opts(xrotation=90)
+        else:
+            result = hv.Points([])
+
+        return result

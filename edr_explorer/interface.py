@@ -6,6 +6,7 @@ import numpy as np
 
 from .lookup import CRS_LOOKUP, TRS_LOOKUP
 
+
 class EDRInterface(object):
     """
     An interface to an EDR Server that can navigate the query structure to
@@ -15,6 +16,7 @@ class EDRInterface(object):
 
     _collections_query_str = "collections/?f=json"
     _locs_query_str = "collections/{coll_id}/locations/{loc_id}?parameter-name={param_names}&datetime={dt_str}"
+    _pts_query_str = "/collections/{coll_id}/position?coords=POINT({x} {y})&parameter-name={param_names}&datetime={dt_str}"
     _generic_query_str = "/{data_query_type}?"
 
     def __init__(self, server_host):
@@ -185,20 +187,54 @@ class EDRInterface(object):
             coords[axis_name] = coord_points
         return coords
 
-    def get_data(self, coll_id, locations, param_names, start_date, end_date,
-                 query_type="locations"):
+    def _request_common(self, query_type, coll_id, param_names, start_date, end_date):
         coll = self.get_collection(coll_id)
         available_query_types = self.get_query_types(coll_id)
         assert query_type in available_query_types, f"Query type {query_type!r} not supported by server."
 
-        date_query_value = f"{start_date}/{end_date}"
+        date_query_str = f"{start_date}/{end_date}"
         if not isinstance(param_names, str):
             param_names = ",".join(param_names)
+
+        return coll, param_names, date_query_str
+
+    def request_points(self, x, y, coll_id, param_names, start_date, end_date):
+        coll, param_names, date_query_str = self._request_common(
+            "position", coll_id, param_names, start_date, end_date)
+
+        query_str = self._locs_query_str.format(coll_id=coll["id"],
+                                                x=x, y=y,
+                                                param_names=param_names,
+                                                dt_str=date_query_str)
+        points_json = self._get_covjson(query_str)
+
+        coord_axis_names = list(set(list(points_json["domain"]["axes"].keys())) - set(["x", "y"]))
+        coords = {}
+        for axis_name in coord_axis_names:
+            coords[axis_name] = points_json["domain"]["axes"][axis_name]["values"]
+
+        values = {}
+        for param_name in param_names:
+            data_range = points_json["ranges"][param_name]
+            range_type = data_range["type"]
+            if range_type == "NdArray":
+                values = [v if v is not None else np.nan for v in data_range["values"]]
+                dtype = data_range["dataType"]
+                shape = data_range["shape"]
+                values[param_name] = np.array(values, dtype=dtype).reshape(shape)
+            else:
+                raise NotImplementedError(f"Cannot process parameter type {range_type!r}")
+
+        return coords, values
+
+    def request_locations(self, coll_id, locations, param_names, start_date, end_date):
+        coll, param_names, date_query_str = self._request_common(
+            "locations", coll_id, param_names, start_date, end_date)
 
         query_str = self._locs_query_str.format(coll_id=coll["id"],
                                                 loc_id=locations,
                                                 param_names=param_names,
-                                                dt_str=date_query_value)
+                                                dt_str=date_query_str)
         data_json = self._get_covjson(query_str)
 
         data_getter = self._build_data_array(data_json)
