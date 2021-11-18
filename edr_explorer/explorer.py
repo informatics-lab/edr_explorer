@@ -169,20 +169,22 @@ class EDRExplorer(param.Parameterized):
     def plot(self):
         tiles = gv.tile_sources.Wikipedia.opts(width=800, height=600)
         if self._dataset is not None:
+            # Handle custom colormap if specified.
+            if self._custom_colours is not None:
+                colours = self._custom_colours["colours"]
+                levels = self._custom_colours["values"]
+                opts_dict = {"cmap": colours, "color_levels": levels, "alpha": 0.9}
+                data = np.ma.masked_less(self._data_array[0], levels[0])
+            else:
+                opts_dict = {"cmap": "viridis", "alpha": 0.9}
+                data = self._data_array[0]
+
             ds = hv.Dataset(
-                (self._coords["y"], self._coords["x"], np.ma.masked_invalid(self._data_array[0])),
+                (self._coords["y"], self._coords["x"], data),
                 ["latitude", "longitude"],
                 self.pc_params.value)
             gds = ds.to(gv.Dataset, crs=ccrs.PlateCarree())
-            if self._custom_colours is not None:
-                cmap, _ = color_intervals(
-                    self._custom_colours["colours"],
-                    self._custom_colours["values"],
-                    N=len(self._custom_colours["colours"])
-                )
-            else:
-                cmap = "viridis"
-            showable = tiles * gds.to(gv.Image, ['longitude', 'latitude']).opts(cmap=cmap, alpha=0.9)
+            showable = tiles * gds.to(gv.Image, ['longitude', 'latitude']).opts(**opts_dict)
         else:
             showable = tiles
         return showable
