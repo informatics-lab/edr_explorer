@@ -11,6 +11,10 @@ from .interface import EDRInterface
 
 
 class EDRExplorer(param.Parameterized):
+    """
+    A `Panel` dashboard from which you can explore the data presented by an EDR Server.
+
+    """
     # Metadata widgets.
     coll_uri = widgets.Text(placeholder='Specify an EDR Server...', description='Server')
     coll = widgets.Dropdown(options=[], description='Collections', disabled=True)
@@ -34,6 +38,16 @@ class EDRExplorer(param.Parameterized):
     pwbox = widgets.HBox(pwlist)
 
     def __init__(self, server_address=None):
+        """
+        Set up a new `Panel` dashboard to use to explore the data presented by an
+        EDR Server. This constructs an instance of `.interface.EDRInterface` to submit
+        requests to the EDR Server on the dashboard's behalf and displays results from
+        these requests in the dashboard.
+
+        Optionally pass the hostname of an EDR server via `server_address`. If specified,
+        this value will pre-populate the `Server` field of the interface.
+
+        """
         self.server_address = server_address
         if self.server_address is not None:
             self.coll_uri.value = self.server_address
@@ -55,14 +69,37 @@ class EDRExplorer(param.Parameterized):
 
     @property
     def edr_interface(self):
+        """The instance of `.interface.EDRInterface` used to handle requests to the EDR Server."""
         return self._edr_interface
 
     @edr_interface.setter
     def edr_interface(self, value):
+        """Set the instance of `.interface.EDRInterface` used to handle requests to the EDR Server."""
         self._edr_interface = value
 
     @property
     def layout(self):
+        """
+        Construct a layout of `Panel` objects to produce the EDR explorer dashboard.
+        To view the dashboard:
+            explorer = EDRExplorer()
+            explorer.layout
+
+        The layout is composed of two main elements:
+          * a set of selector widgets in a column on the left that define the values passed
+            in queries to the EDR Server via the `.interface.EDRInterface` instance
+          * a plot on the right that displays graphical results from queries submitted to the
+            EDR Server via the `.interface.EDRInterface` instance
+
+        There are some extra elements too:
+          * the widgets column on the left contains two buttons - one to connect to the server
+            at the web address specified in the `Server` text field widget; and one to submit a
+            query to the EDR Server via the `.interface.EDRInterface` instance based on the values
+            set in the selector widgets
+          * the plot area on the right contains two plot control widgets to select specific data
+            from queries submitted to the EDR Server to show on the plot
+
+        """
         connect_row = pn.Row(self.coll_uri, self.connect_button)
         control_row = pn.Row(self.wbox, self.submit_button, align=("end", "start"))
         plot_col = pn.Column(self.plot, self.pwbox)
@@ -85,26 +122,23 @@ class EDRExplorer(param.Parameterized):
             self.coll.value = self.edr_interface.collection_ids[0]
             self._enable_controls()
 
-    def _request_locations_data(self, event):
-        query_params = {"query_type": "locations"}
-        for widget in self.wlist:
-            query_params[widget.description] = widget.value
-        print(query_params)
-
-    def _request_point_data(self, event):
-        query_params = {"query_type": "position"}
-        pass
-
     def _enable_controls(self):
+        """Enable query control widgets in the left column."""
         for widget in self.wlist:
             widget.disabled = False
         self.submit_button.disabled = False
 
     def _enable_plot_controls(self):
+        """Enable plot control widgets for updating the specific data shown on the plot."""
         for widget in self.pwlist:
             widget.disabled = False
 
     def _populate_contents_callback(self, change):
+        """
+        Populate the options and values attributes of all the left column query control
+        widgets when a collection provided by the EDR Server is specified.
+
+        """
         collection_id = change["new"]
         if collection_id is not None:
             self._populate_params(collection_id)
@@ -115,6 +149,11 @@ class EDRExplorer(param.Parameterized):
             self.end_time.options = times
 
     def _populate_params(self, collection_id):
+        """
+        Populate the `Datasets` widget with a descriptive list (names and units) of
+        the parameters provided by the selected collection.
+
+        """
         params_dict = self.edr_interface.get_collection_parameters(collection_id)
         options = []
         for k, v in params_dict.items():
@@ -123,13 +162,24 @@ class EDRExplorer(param.Parameterized):
         self.datasets.options = options
 
     def _filter_end_time(self, change):
+        """
+        Only show end datetimes in the `End Date` widget that are later than
+        the value selected in the `Start Date` widget.
+
+        """
         start_time_selected = change["new"]
         times = self.start_time.options
         sel_idx = times.index(start_time_selected)
         self.end_time.options = times[sel_idx:]
 
     def _request_plot_data(self, _):
-        """Callback when the `submit` button is clicked."""
+        """
+        Callback when the `submit` button is clicked.
+
+        This makes a get data request to the EDR Server via the
+        `.interface.EDRInterface` instance.
+
+        """
         # Get selection widgets state for request.
         coll_id = self.coll.value
         param_names = self.datasets.value
@@ -154,7 +204,12 @@ class EDRExplorer(param.Parameterized):
 
         self._enable_plot_controls()
 
-    def _plot_change(self, change):
+    def _plot_change(self, _):
+        """
+        Helper function to capture changes from either plot control widget
+        and trigger an update of the plot.
+
+        """
         param = self.pc_params.value
         t = self.pc_times.value
         # Make sure both widgets are populated.
@@ -165,6 +220,7 @@ class EDRExplorer(param.Parameterized):
 
     @param.depends('_data_array')
     def plot(self):
+        """Show data from a data request to the EDR Server on the plot."""
         tiles = gv.tile_sources.Wikipedia.opts(width=800, height=600)
         if self._dataset is not None:
             ds = hv.Dataset(
