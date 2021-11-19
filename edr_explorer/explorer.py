@@ -58,6 +58,7 @@ class EDRExplorer(param.Parameterized):
 
         self._data_getter_fn = None
         self._coords = None
+        self._data_crs = None
         self._dataset = None
 
         self.connect_button.on_click(self._load_collections)
@@ -188,10 +189,11 @@ class EDRExplorer(param.Parameterized):
         end_date = self.end_time.value
 
         # Make data and coords request.
-        data_getter, coords = self.edr_interface.get_data(
+        data_getter, coords, crs = self.edr_interface.get_data(
             coll_id, locations, param_names, start_date, end_date)
         self._data_getter_fn = data_getter
         self._coords = coords
+        self._data_crs = crs
 
         # Generate and enable the plot controls.
         plot_control_times = list(coords["t"])
@@ -227,7 +229,7 @@ class EDRExplorer(param.Parameterized):
                 (self._coords["y"], self._coords["x"], np.ma.masked_invalid(self._data_array[0])),
                 ["latitude", "longitude"],
                 self.pc_params.value)
-            gds = ds.to(gv.Dataset, crs=ccrs.PlateCarree())
+            gds = ds.to(gv.Dataset, crs=self._data_crs)
             showable = tiles * gds.to(gv.Image, ['longitude', 'latitude']).opts(cmap="viridis", alpha=0.75)
         else:
             showable = tiles
