@@ -249,7 +249,7 @@ class EDRInterface(object):
 
         """
         coords_data = data_json["domain"]["axes"]
-        axes_names = list(set(list(coords_data.keys())) - set(["referencing"]))
+        axes_names = list(coords_data.keys())
         coords = {}
         for axis_name in axes_names:
             coord_data = coords_data[axis_name]
@@ -263,6 +263,16 @@ class EDRInterface(object):
                 raise KeyError(f"Could not build coordinate from keys: {bad_keys!r}.")
             coords[axis_name] = coord_points
         return coords
+
+    def _get_data_crs(self, data_json):
+        """Retrieve the horizontal coordinate reference system from `data_json`."""
+        ref_systems = data_json["domain"]["referencing"]
+        axes_names = list(data_json["domain"]["axes"].keys())
+        horizontal_axes_names = set(["x", "y", "latitude", "longitude"])  # May need to be extended.
+        crs_axes = sorted(list(set(axes_names) & horizontal_axes_names))
+        ref = self._dict_list_search(ref_systems, "coordinates", crs_axes)
+        crs_type = ref["system"]["type"]
+        return CRS_LOOKUP[crs_type]
 
     def get_data(self, coll_id, locations, param_names, start_date, end_date,
                  query_type="locations"):
@@ -303,4 +313,5 @@ class EDRInterface(object):
 
         data_getter = self._build_data_array(data_json)
         coords = self._build_coords_arrays(data_json)
-        return data_getter, coords
+        crs = self._get_data_crs(data_json)
+        return data_getter, coords, crs
