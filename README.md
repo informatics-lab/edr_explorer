@@ -1,6 +1,10 @@
 # edr_explorer
 Interface with an EDR Server and explore its contents from a Python session.
 
+## About EDR
+
+EDR stands for Environmental Data Retrieval. It is a standard API provided by the Open Geospatial Consortium (OGC) for interacting with environmental data in web and GIS applications. Much more information on EDR is [available from the OGC](https://ogcapi.ogc.org/edr/).
+
 ## Installation
 
 No pip / conda installer (yet). Download the source code / clone this repo and add the repo root to your `$PYTHONPATH` using your preferred method...
