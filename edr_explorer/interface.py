@@ -19,6 +19,11 @@ class EDRInterface(object):
     _generic_query_str = "/{data_query_type}?"
 
     def __init__(self, server_host):
+        """
+        Construct an interface to an EDR Server accessible at the URI specified in `server_host`
+        and request the `collections` metadata from the server.
+
+        """
         self.server_host = server_host
 
         self.json = self._get_covjson(self._collections_query_str)
@@ -51,6 +56,11 @@ class EDRInterface(object):
         return r.json()
 
     def _get_link(self, coll_id, key, query_ref):
+        """
+        Retrieve a link url embedded in collection metadata.
+        Typically these links describe how to retrieve specific data from the server.
+
+        """
         coll = self.get_collection(coll_id)
         if key == "links":
             links = [itm["href"] for itm in coll[key]]
@@ -87,12 +97,23 @@ class EDRInterface(object):
             return l[idx]
 
     def _get_locations_json(self, keys):
+        """Get JSON data from the server from a `locations` query."""
         coll = self.get_collection(keys)
         locs_query_uri = self._get_link(keys, "data_queries", "locations")
         named_query_uri = locs_query_uri.replace("name", coll["id"])
         return self._get_covjson(named_query_uri, full_uri=True)
 
     def get_collection(self, keys):
+        """
+        Get the JSON metadata of a specific collection in the list of collections
+        provided by the EDR Server and listed in the response from the `collections`
+        query. The specific collection is selected by the value of `keys`, which may
+        be one of the following:
+          * an int describing the index of the collection in the list of collections
+          * a string containing the value of the `id` parameter of a collection
+          * a string containing the value of the `title` parameter of a collection
+
+        """
         idx = None
         if isinstance(keys, int):
             idx = keys
@@ -108,15 +129,32 @@ class EDRInterface(object):
         return self.collections[idx]
 
     def get_locations(self, keys):
+        """
+        Make a `locations` request to the EDR Server and return a list of IDs of defined
+        locations in the collection defined by `keys`.
+
+        """
         locs_json = self._get_locations_json(keys)
         return [d["id"] for d in locs_json["features"]]
 
     def get_location_extents(self, keys, feature_id):
+        """
+        Make a `locations` request to the EDR Server and return the bounding-box
+        geometry of a specific location defined by:
+          * the collection specified by `keys`
+          * the location specified by `feature_id`.
+
+        """
         locs_json = self._get_locations_json(keys)
         feature_json = self._dict_list_search(locs_json["features"], "id", feature_id)
         return feature_json["geometry"]
 
     def get_spatial_extent(self, keys):
+        """
+        Return the spatial (bounding-box) extent and coordinate reference system that
+        describes a collection defined by `keys`.
+
+        """
         coll = self.get_collection(keys)
         bbox = coll["extent"]["spatial"]["bbox"]
         crs = coll["extent"]["spatial"]["crs"]
@@ -126,6 +164,11 @@ class EDRInterface(object):
         return bbox, proj
 
     def get_temporal_extent(self, keys):
+        """
+        Return the time coordinate points and temporal reference system that
+        describes a collection defined by `keys`.
+
+        """
         coll = self.get_collection(keys)
         times = coll["extent"]["temporal"]
         t_keys = times.keys()
@@ -139,11 +182,16 @@ class EDRInterface(object):
         return time_strings, trs_ref
 
     def get_query_types(self, keys):
+        """Return a list of the query types supported against a collection defined by `keys`."""
         coll = self.get_collection(keys)
         return list(coll['data_queries'].keys())
 
     def get_collection_parameters(self, keys):
-        """In Iris-speak these are the phenomena available in the collection."""
+        """
+        Get descriptions of the datasets (that is, environmental quantities / parameters / phenomena)
+        provided by a collection defined by `keys`.
+
+        """
         coll = self.get_collection(keys)
         params_dict = {}
         for param_id, param_desc in coll["parameter_names"].items():
@@ -153,8 +201,22 @@ class EDRInterface(object):
         return params_dict
 
     def _build_data_array(self, data_json):
-        params = list(data_json["ranges"].keys())
+        """
+        Return a closure function to make a data request to the EDR Server based on a
+        data-describing JSON that is common to all specific data array requests.
+
+        """
         def data_getter(param_name, template_params):
+            """
+            Request data array values from the EDR Server using the endpoint specified
+            in data-describing JSON from an earlier request and return a NumPy array of
+            the values.
+
+            The specific data array is defined by `param_name`, the name of the dataset
+            to be retrieved, and `template_params`, which are used to fill a URL template
+            to specify variable coordinate point values.
+
+            """
             param_info = data_json["ranges"][param_name]
             param_type = param_info["type"]
             if param_type == "TiledNdArray":
@@ -167,9 +229,25 @@ class EDRInterface(object):
         return data_getter
 
     def _build_coord_points(self, d):
+        """
+        Build a linearly spaced list of coordinate point values
+        from a dictionary `d` containing `start`, `stop` and `num`
+        (number of points) values.
+
+        """
         return np.linspace(d["start"], d["stop"], d["num"])
 
     def _build_coords_arrays(self, data_json):
+        """
+        Build coordinate arrays from data-describing JSON `data_json`.
+
+        Coordinate arrays with few values are returned as a list of values. 
+        Longer or easily constructed coordinate arrays are specified as a list
+        of [`start`, `stop`, `number`], and these are converted to an array of values.
+
+        Returns a dictionary of `{"axis name": array_of_coordinate_points}`.
+
+        """
         coords_data = data_json["domain"]["axes"]
         axes_names = list(set(list(coords_data.keys())) - set(["referencing"]))
         coords = {}
@@ -188,6 +266,27 @@ class EDRInterface(object):
 
     def get_data(self, coll_id, locations, param_names, start_date, end_date,
                  query_type="locations"):
+        """
+        Request data values and coordinate point arrays for a specific dataset provided
+        by the EDR Server. The dataset is specified by the calling args:
+          * `coll_id` is an identifier for a collection
+          * `locations` is an identifier for the location for which the data is provided
+          * `param_names` is a list of one or more datasets for which to retrieve data
+          * `start_date` and `end_date` describe the temporal extent over which to retrieve data
+          * `query_type` defines the type of query to submit. It must be a query type supported by
+            the collection.
+
+        One principle of EDR is to serve as little data as possible per query. Thus a data request
+        returns JSON describing coordinate arrays and an EDR Server location to hit for each dataset
+        specified by the request. For example, a query to retrieve data for multiple datasets
+        and datetime values will return EDR Server locations for each combination of dataset and]
+        datetime value. 
+
+        To avoid making all these requests consecutively, a closure function that
+        can be called to request the data array for a specific combination is returned, along with
+        the coordinate arrays that describe all the data being requested.
+
+        """
         coll = self.get_collection(coll_id)
         available_query_types = self.get_query_types(coll_id)
         assert query_type in available_query_types, f"Query type {query_type!r} not supported by server."
