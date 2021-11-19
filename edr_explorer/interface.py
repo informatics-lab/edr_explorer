@@ -16,7 +16,7 @@ class EDRInterface(object):
 
     _collections_query_str = "collections/?f=json"
     _locs_query_str = "collections/{coll_id}/locations/{loc_id}?parameter-name={param_names}&datetime={dt_str}"
-    _generic_query_str = "/{data_query_type}?"
+    _generic_query_str = "collections/{coll_id}/{query_type}?{query_str}"
 
     def __init__(self, server_host):
         """
@@ -274,13 +274,27 @@ class EDRInterface(object):
         crs_type = ref["system"]["type"]
         return CRS_LOOKUP[crs_type]
 
-    def get_data(self, coll_id, locations, param_names, start_date, end_date,
-                 query_type="locations"):
+    def query_position(self):
         """
         Request data values and coordinate point arrays for a specific dataset provided
-        by the EDR Server. The dataset is specified by the calling args:
+        by the EDR Server. A `position` request is one of the specifically defined query
+        types in EDR, along with `location` and `items`, and is used for returning data
+        at a particular location.
+
+        """
+        raise NotImplemented
+
+    def query_locations(self, coll_id, location, param_names, start_date, end_date):
+        """
+        Request data values and coordinate point arrays for a specific dataset provided
+        by the EDR Server. A `location` request is one of the specifically defined query
+        types in EDR, along with `position` and `items`, and is used for defining specific
+        areas of interest within the data that are to be made commonly available to all users
+        of the EDR Server.
+
+        The dataset is specified by the calling args:
           * `coll_id` is an identifier for a collection
-          * `locations` is an identifier for the location for which the data is provided
+          * `location` is an identifier for the location for which the data is provided
           * `param_names` is a list of one or more datasets for which to retrieve data
           * `start_date` and `end_date` describe the temporal extent over which to retrieve data
           * `query_type` defines the type of query to submit. It must be a query type supported by
@@ -297,6 +311,7 @@ class EDRInterface(object):
         the coordinate arrays that describe all the data being requested.
 
         """
+        query_type = "locations"
         coll = self.get_collection(coll_id)
         available_query_types = self.get_query_types(coll_id)
         assert query_type in available_query_types, f"Query type {query_type!r} not supported by server."
@@ -306,7 +321,7 @@ class EDRInterface(object):
             param_names = ",".join(param_names)
 
         query_str = self._locs_query_str.format(coll_id=coll["id"],
-                                                loc_id=locations,
+                                                loc_id=location,
                                                 param_names=param_names,
                                                 dt_str=date_query_value)
         data_json = self._get_covjson(query_str)
@@ -315,3 +330,51 @@ class EDRInterface(object):
         coords = self._build_coords_arrays(data_json)
         crs = self._get_data_crs(data_json)
         return data_getter, coords, crs
+
+    def query_items(self):
+        """
+        Request predefined data objects the EDR Server. An `items` request is one of the
+        specifically defined query types in EDR, along with `position` and `location`.
+        It is used for returning whole dataset objects, such as NetCDF files.
+        
+        """
+        raise NotImplemented
+
+    def query(self, coll_id, query_type, **query_kwargs):
+        """
+        Define a generic query to submit to the EDR Server. Args and kwargs:
+          * `coll_id` is an identifier for a collection
+          * `query_type` is a valid query type to submit to the EDR Server. This can be one
+            of `radius`, `area`, `cube`, `trajectory` or `corridor`, but not all query types
+            are guaranteed to be supported by the EDR Server. An `AssertionError` will be raised
+            if the query type is not supported by the EDR Server.
+          * `query_kwargs`: multiple parameters to construct the parameter string of the query.
+            Valid parameters vary between query types; check the EDR documentation for more
+            information. Common parameter **keys** include `coords`, `parameter-name`, `z`, `datetime`,
+            `crs` and `f` (for return type of the result from the EDR Server). **Values** _must_ be
+            appropriately formatted strings.
+
+        Note that this can be used to submit a `position`, `location` or `items` query, but
+        specific helper methods are provided for those specifically-designed query types.
+
+        IMPORTANT! It is up to the calling scope to ensure that valid query kwargs are
+        passed. No parameter validation is performed here; a query will be constructed
+        and submitted to the EDR Server without further checks.
+
+        """
+        coll = self.get_collection(coll_id)
+        available_query_types = self.get_query_types(coll_id)
+        assert query_type in available_query_types, f"Query type {query_type!r} not supported by server."
+
+        parameter_str = "{key}={value}"
+        query_items = [parameter_str.format(key=k, value=v) for k, v in query_kwargs.items()]
+        query_str = "&".join(query_items)
+
+        # XXX handle server errors in case of bad query strings?
+        query_uri = self._generic_query_str.format(
+            coll_id=coll["id"],
+            query_type=query_type,
+            query_str=query_str,
+        )
+        # XXX handlers for different specific query types?
+        return self._get_covjson(query_uri)
