@@ -1,9 +1,7 @@
 import cartopy.crs as ccrs
 import ipywidgets as widgets
-import numpy as np
 
 import geoviews as gv
-import holoviews as hv
 import panel as pn
 import param
 
@@ -27,8 +25,8 @@ class EDRExplorer(param.Parameterized):
     pc_times = widgets.SelectionSlider(options=[""], description="Timestep", disabled=True)
     pc_params = widgets.Dropdown(options=[], description="Parameter", disabled=True)
 
-    # Dataset attribute.
-    _data_array = param.Array(np.array([np.nan]))
+    # Dataset reference.
+    _data_key = param.String("")
 
     connect_button = widgets.Button(description="Connect")
     submit_button = widgets.Button(description="Submit", disabled=True)
@@ -55,11 +53,6 @@ class EDRExplorer(param.Parameterized):
         super().__init__()
 
         self._edr_interface = None
-
-        self._data_getter_fn = None
-        self._coords = None
-        self._data_crs = None
-        self._dataset = None
 
         self.connect_button.on_click(self._load_collections)
         self.submit_button.on_click(self._request_plot_data)
@@ -188,15 +181,11 @@ class EDRExplorer(param.Parameterized):
         start_date = self.start_time.value
         end_date = self.end_time.value
 
-        # Make data and coords request.
-        data_getter, coords, crs = self.edr_interface.get_data(
-            coll_id, locations, param_names, start_date, end_date)
-        self._data_getter_fn = data_getter
-        self._coords = coords
-        self._data_crs = crs
+        # Get dataset.
+        self.edr_interface.query_locations(coll_id, locations, param_names, start_date, end_date)
 
         # Generate and enable the plot controls.
-        plot_control_times = list(coords["t"])
+        plot_control_times = list(self.edr_interface.data_handler.coords["t"])
         self.pc_times.options = plot_control_times
         self.pc_times.value = plot_control_times[0]
 
@@ -216,21 +205,15 @@ class EDRExplorer(param.Parameterized):
         t = self.pc_times.value
         # Make sure both widgets are populated.
         if param is not None and t is not None:
-            tidx = self.start_time.options.index(t)
-            self._data_array = self._data_getter_fn(param, {"t": tidx})
-            self._dataset = True
+            self._data_key = self.edr_interface.data_handler.make_key(param, {"t": t})
 
-    @param.depends('_data_array')
+    @param.depends('_data_key')
     def plot(self):
         """Show data from a data request to the EDR Server on the plot."""
         tiles = gv.tile_sources.Wikipedia.opts(width=800, height=600)
-        if self._dataset is not None:
-            ds = hv.Dataset(
-                (self._coords["y"], self._coords["x"], np.ma.masked_invalid(self._data_array[0])),
-                ["latitude", "longitude"],
-                self.pc_params.value)
-            gds = ds.to(gv.Dataset, crs=self._data_crs)
-            showable = tiles * gds.to(gv.Image, ['longitude', 'latitude']).opts(cmap="viridis", alpha=0.75)
+        if self._data_key != "":
+            dataset = self.edr_interface.data_handler[self._data_key]
+            showable = tiles * dataset.to(gv.Image, ['longitude', 'latitude']).opts(cmap="viridis", alpha=0.75)
         else:
             showable = tiles
         return showable

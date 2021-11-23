@@ -1,10 +1,10 @@
 import re
-from cartopy.crs import PROJ_VERSION
-import requests
 
-import numpy as np
+from edr_explorer.data import DataHandler
 
+from .data import DataHandler
 from .lookup import CRS_LOOKUP, TRS_LOOKUP
+from .util import dict_list_search, get_request
 
 
 class EDRInterface(object):
@@ -31,6 +31,16 @@ class EDRInterface(object):
         self.collection_ids = [c["id"] for c in self.collections]
         self.collection_titles = [c["title"] for c in self.collections]
 
+        self._data_handler = None
+
+    @property
+    def data_handler(self):
+        return self._data_handler
+
+    @data_handler.setter
+    def data_handler(self, value):
+        self._data_handler = value
+
     def __repr__(self):
         n_colls = len(self.collections)
         max_id_len = max([len(c_id) for c_id in self.collection_ids])
@@ -52,8 +62,7 @@ class EDRInterface(object):
             uri = query_str
         else:
             uri = f"{self.server_host}/{query_str}"
-        r = requests.get(uri)
-        return r.json()
+        return get_request(uri)
 
     def _get_link(self, coll_id, key, query_ref):
         """
@@ -76,26 +85,6 @@ class EDRInterface(object):
             raise ValueError(f"Cannot extract links from collection key {key!r}.")
         return link
 
-    def _build_generic_query(self, parameters):
-        pass
-
-    def _dict_list_search(self, l, keys, value):
-        """
-        Search a list of dictionaries of a common schema for a specific key/value pair.
-
-        For example:
-            l = [{'a': foo, 'b': 1, 'c': 2}, {'a': 'bar', 'b': 3, 'c': 4}]
-        If `keys='a'` and `value='foo'` then the first dict in the list would be returned.
-
-        """
-        values_list = [d[keys] for d in l]
-        try:
-            idx = values_list.index(value)
-        except ValueError:
-            raise ValueError(f"A pair matching {{{keys}: {value}}} could not be found.")
-        else:
-            return l[idx]
-
     def _get_locations_json(self, keys):
         """Get JSON data from the server from a `locations` query."""
         coll = self.get_collection(keys)
@@ -117,7 +106,7 @@ class EDRInterface(object):
         idx = None
         if isinstance(keys, int):
             idx = keys
-        # XXX this could be replaced with `self._dict_list_search()`.
+        # XXX this could be replaced with `dict_list_search`.
         else:
             for i, coll in enumerate(self.collections):
                 coll_keys = [coll["id"], coll["title"]]
@@ -146,7 +135,7 @@ class EDRInterface(object):
 
         """
         locs_json = self._get_locations_json(keys)
-        feature_json = self._dict_list_search(locs_json["features"], "id", feature_id)
+        feature_json = dict_list_search(locs_json["features"], "id", feature_id)
         return feature_json["geometry"]
 
     def get_spatial_extent(self, keys):
@@ -200,80 +189,6 @@ class EDRInterface(object):
             params_dict[param_id] = {"label": en_label, "units": units}
         return params_dict
 
-    def _build_data_array(self, data_json):
-        """
-        Return a closure function to make a data request to the EDR Server based on a
-        data-describing JSON that is common to all specific data array requests.
-
-        """
-        def data_getter(param_name, template_params):
-            """
-            Request data array values from the EDR Server using the endpoint specified
-            in data-describing JSON from an earlier request and return a NumPy array of
-            the values.
-
-            The specific data array is defined by `param_name`, the name of the dataset
-            to be retrieved, and `template_params`, which are used to fill a URL template
-            to specify variable coordinate point values.
-
-            """
-            param_info = data_json["ranges"][param_name]
-            param_type = param_info["type"]
-            if param_type == "TiledNdArray":
-                data_url = param_info["tileSets"][0]["urlTemplate"]
-                r = self._get_covjson(data_url.format(**template_params), full_uri=True)
-                data = np.array(r["values"], dtype=r['dataType']).reshape(r["shape"])
-            else:
-                raise NotImplementedError(f"Cannot process parameter type {param_type!r}")
-            return data
-        return data_getter
-
-    def _build_coord_points(self, d):
-        """
-        Build a linearly spaced list of coordinate point values
-        from a dictionary `d` containing `start`, `stop` and `num`
-        (number of points) values.
-
-        """
-        return np.linspace(d["start"], d["stop"], d["num"])
-
-    def _build_coords_arrays(self, data_json):
-        """
-        Build coordinate arrays from data-describing JSON `data_json`.
-
-        Coordinate arrays with few values are returned as a list of values. 
-        Longer or easily constructed coordinate arrays are specified as a list
-        of [`start`, `stop`, `number`], and these are converted to an array of values.
-
-        Returns a dictionary of `{"axis name": array_of_coordinate_points}`.
-
-        """
-        coords_data = data_json["domain"]["axes"]
-        axes_names = list(coords_data.keys())
-        coords = {}
-        for axis_name in axes_names:
-            coord_data = coords_data[axis_name]
-            axis_keys = list(coord_data.keys())
-            if "start" in axis_keys:
-                coord_points = self._build_coord_points(coord_data)
-            elif "values" in axis_keys:
-                coord_points = np.array(coord_data["values"])
-            else:
-                bad_keys = ", ".join(axis_keys)
-                raise KeyError(f"Could not build coordinate from keys: {bad_keys!r}.")
-            coords[axis_name] = coord_points
-        return coords
-
-    def _get_data_crs(self, data_json):
-        """Retrieve the horizontal coordinate reference system from `data_json`."""
-        ref_systems = data_json["domain"]["referencing"]
-        axes_names = list(data_json["domain"]["axes"].keys())
-        horizontal_axes_names = set(["x", "y", "latitude", "longitude"])  # May need to be extended.
-        crs_axes = sorted(list(set(axes_names) & horizontal_axes_names))
-        ref = self._dict_list_search(ref_systems, "coordinates", crs_axes)
-        crs_type = ref["system"]["type"]
-        return CRS_LOOKUP[crs_type]
-
     def query_position(self):
         """
         Request data values and coordinate point arrays for a specific dataset provided
@@ -320,16 +235,14 @@ class EDRInterface(object):
         if not isinstance(param_names, str):
             param_names = ",".join(param_names)
 
-        query_str = self._locs_query_str.format(coll_id=coll["id"],
-                                                loc_id=location,
-                                                param_names=param_names,
-                                                dt_str=date_query_value)
+        query_str = self._locs_query_str.format(
+            coll_id=coll["id"],
+            loc_id=location,
+            param_names=param_names,
+            dt_str=date_query_value
+        )
         data_json = self._get_covjson(query_str)
-
-        data_getter = self._build_data_array(data_json)
-        coords = self._build_coords_arrays(data_json)
-        crs = self._get_data_crs(data_json)
-        return data_getter, coords, crs
+        self.data_handler = DataHandler(data_json)
 
     def query_items(self):
         """
@@ -376,5 +289,5 @@ class EDRInterface(object):
             query_type=query_type,
             query_str=query_str,
         )
-        # XXX handlers for different specific query types?
-        return self._get_covjson(query_uri)
+        data_json = self._get_covjson(query_uri)
+        self.data_handler = DataHandler(data_json)
