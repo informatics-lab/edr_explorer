@@ -20,6 +20,8 @@ class EDRExplorer(param.Parameterized):
     datasets = widgets.SelectMultiple(options=[], description="Datasets", disabled=True)
     start_time = widgets.Dropdown(options=[], description='Start Date', disabled=True)
     end_time = widgets.Dropdown(options=[], description='End Date', disabled=True)
+    connect_error_box = widgets.HTML("", layout=widgets.Layout(display="none"))
+    data_error_box = widgets.HTML("", layout=widgets.Layout(display="none"))
 
     # Plot control widgets.
     pc_times = widgets.SelectionSlider(options=[""], description="Timestep", disabled=True)
@@ -32,7 +34,7 @@ class EDRExplorer(param.Parameterized):
     submit_button = widgets.Button(description="Submit", disabled=True)
     wlist = [coll, locations, datasets, start_time, end_time]  # Metadata widgets.
     pwlist = [pc_times, pc_params]  # Plot widgets.
-    wbox = widgets.VBox(wlist)
+    wbox = widgets.VBox(wlist + [data_error_box])
     pwbox = widgets.HBox(pwlist)
 
     def __init__(self, server_address=None):
@@ -94,10 +96,24 @@ class EDRExplorer(param.Parameterized):
             from queries submitted to the EDR Server to show on the plot
 
         """
-        connect_row = pn.Row(self.coll_uri, self.connect_button)
+        connect_row = pn.Row(
+            pn.Column(self.coll_uri, self.connect_error_box),
+            self.connect_button
+        )
         control_row = pn.Row(self.wbox, self.submit_button, align=("end", "start"))
         plot_col = pn.Column(self.plot, self.pwbox)
-        return pn.Row(pn.Column(connect_row, control_row), plot_col).servable()
+        control_col = pn.Column(connect_row, control_row)
+        return pn.Row(control_col, plot_col).servable()
+
+    def _populate_error_box(self, error_box):
+        bad_layout = widgets.Layout(
+            border="2px solid #dc3545",
+            padding="0.05rem 0.5rem",
+            margin="0 0.25rem 0 5.625rem",
+            width="70%",
+        )
+        error_box.value = self.edr_interface.errors
+        error_box.layout = bad_layout
 
     def _load_collections(self, event):
         """
@@ -107,14 +123,14 @@ class EDRExplorer(param.Parameterized):
 
         """
         server_loc = self.coll_uri.value
-        try:
-            self.edr_interface = EDRInterface(server_loc)
-        except:
-            self.coll_uri.value = "Invalid server location specified..."
-        else:
+        self.edr_interface = EDRInterface(server_loc)
+
+        if self.edr_interface.json is not None:
             self.coll.options = [(ct, cid) for (cid, ct) in zip(self.edr_interface.collection_ids, self.edr_interface.collection_titles)]
             self.coll.value = self.edr_interface.collection_ids[0]
             self._enable_controls()
+        if self.edr_interface.errors is not None:
+            self._populate_error_box(self.connect_error_box)
 
     def _enable_controls(self):
         """Enable query control widgets in the left column."""
@@ -184,16 +200,19 @@ class EDRExplorer(param.Parameterized):
         # Get dataset.
         self.edr_interface.query_locations(coll_id, locations, param_names, start_date, end_date)
 
-        # Generate and enable the plot controls.
-        plot_control_times = list(self.edr_interface.data_handler.coords["t"])
-        self.pc_times.options = plot_control_times
-        self.pc_times.value = plot_control_times[0]
+        if self.edr_interface.errors is None:
+            # Generate and enable the plot controls.
+            plot_control_times = list(self.edr_interface.data_handler.coords["t"])
+            self.pc_times.options = plot_control_times
+            self.pc_times.value = plot_control_times[0]
 
-        plot_control_params = list(param_names)
-        self.pc_params.options = list(filter(lambda o: o[1] in plot_control_params, self.datasets.options))
-        self.pc_params.value = plot_control_params[0]
+            plot_control_params = list(param_names)
+            self.pc_params.options = list(filter(lambda o: o[1] in plot_control_params, self.datasets.options))
+            self.pc_params.value = plot_control_params[0]
 
-        self._enable_plot_controls()
+            self._enable_plot_controls()
+        else:
+            self._populate_error_box(self.data_error_box)
 
     def _plot_change(self, _):
         """

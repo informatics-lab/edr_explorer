@@ -126,7 +126,7 @@ class DataHandler(object):
         template_dict = {k: self.coords[k].index(v) for k, v in coords_dict.items()}
         url_template = param_info["tileSets"][0]["urlTemplate"]
         url = url_template.format(**template_dict)
-        r = get_request(url)
+        r, status_code, errors = get_request(url)
 
         if param_type == "TiledNdArray":
             array = np.array(r["values"], dtype=r['dataType']).reshape(r["shape"])

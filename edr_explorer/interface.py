@@ -25,13 +25,21 @@ class EDRInterface(object):
 
         """
         self.server_host = server_host
+        self._errors = None
+        self._data_handler = None
 
         self.json = self._get_covjson(self._collections_query_str)
-        self.collections = self.json["collections"]
-        self.collection_ids = [c["id"] for c in self.collections]
-        self.collection_titles = [c["title"] for c in self.collections]
+        self.collections = self._get_collections()
+        self.collection_ids = self._get_collection_ids()
+        self.collection_titles = self._get_collection_titles()
 
-        self._data_handler = None
+    @property
+    def errors(self):
+        return self._errors
+
+    @errors.setter
+    def errors(self, value):
+        self._errors = value
 
     @property
     def data_handler(self):
@@ -58,11 +66,27 @@ class EDRInterface(object):
 
     def _get_covjson(self, query_str, full_uri=False):
         """Make a request to the EDR Server and return the (coverage) JSON response."""
+        self.errors = None
         if full_uri:
             uri = query_str
         else:
             uri = f"{self.server_host}/{query_str}"
-        return get_request(uri)
+        result, status_code, errors = get_request(uri)
+        if errors is not None:
+            emsg = errors
+            if status_code is not None:
+                emsg += f"({status_code})"
+            self.errors = emsg
+        return result
+
+    def _get_collections(self):
+        return self.json["collections"] if self.json is not None else None
+
+    def _get_collection_ids(self):
+        return [c["id"] for c in self.collections] if self.json is not None else None
+
+    def _get_collection_titles(self):
+        return [c["title"] for c in self.collections] if self.json is not None else None
 
     def _get_link(self, coll_id, key, query_ref):
         """
@@ -243,6 +267,8 @@ class EDRInterface(object):
         )
         data_json = self._get_covjson(query_str)
         self.data_handler = DataHandler(data_json)
+        # self.data_handler = None
+        # self.errors = "DidntDataError"
 
     def query_items(self):
         """

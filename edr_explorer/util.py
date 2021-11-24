@@ -2,8 +2,21 @@ import requests
 
 
 def get_request(uri):
-    r = requests.get(uri)
-    return r.json()
+    """
+    Make an HTTP GET request to the (EDR) Server at `uri`.
+
+    """
+    response = None
+    status_code = None
+    errors = None
+    try:
+        r = requests.get(uri)
+    except Exception as e:
+        errors = e.__class__.__name__
+    else:
+        status_code = r.status_code
+        response = r.json()
+    return response, status_code, errors
 
 
 def dict_list_search(l, keys, value):
