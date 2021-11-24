@@ -26,9 +26,18 @@ class DataHandler(object):
         self.data_json = data_json
         self.cache = {}
 
+        self._errors = None
         self._coords = None
         self._crs = None
         self._trs = None
+
+    @property
+    def errors(self):
+        return self._errors
+
+    @errors.setter
+    def errors(self, value):
+        self._errors = value
 
     @property
     def coords(self):
@@ -118,28 +127,33 @@ class DataHandler(object):
         into an appropriate type for caching and disseminating.
 
         """
-        print(f"Param: {param}")
-        print(f"Coords dict: {coords_dict}")
+        self.errors = None
         param_info = self.data_json["ranges"][param]
         param_type = param_info["type"]
 
         template_dict = {k: self.coords[k].index(v) for k, v in coords_dict.items()}
         url_template = param_info["tileSets"][0]["urlTemplate"]
         url = url_template.format(**template_dict)
-        r = get_request(url)
+        r, status_code, errors = get_request(url)
 
-        if param_type == "TiledNdArray":
-            array = np.array(r["values"], dtype=r['dataType']).reshape(r["shape"])
-            data = self._build_geoviews(array, param)
-        else:
-            raise NotImplementedError(f"Cannot process parameter type {param_type!r}")
+        data = None
+        if r is not None:
+            if param_type == "TiledNdArray":
+                array = np.array(r["values"], dtype=r['dataType']).reshape(r["shape"])
+                data = self._build_geoviews(array, param)
+            else:
+                raise NotImplementedError(f"Cannot process parameter type {param_type!r}")
+        if errors is not None:
+            emsg = errors
+            if status_code is not None:
+                emsg += f" ({status_code})"
+            self.errors = emsg
         return data
 
     def get_item(self, param, coords_dict):
         """Get a single dataset from the data cache, or populate it into the cache if not present."""
         key = self.make_key(param, coords_dict)
         if self.cache.get(key) is not None:
-            print(f"Cache hit! With key {key}.")
             result = self.cache[key]
         else:
             result = self._request_data(param, coords_dict)
