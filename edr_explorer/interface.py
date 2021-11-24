@@ -75,7 +75,7 @@ class EDRInterface(object):
         if errors is not None:
             emsg = errors
             if status_code is not None:
-                emsg += f"({status_code})"
+                emsg += f" ({status_code})"
             self.errors = emsg
         return result
 
@@ -250,6 +250,7 @@ class EDRInterface(object):
         the coordinate arrays that describe all the data being requested.
 
         """
+        self.data_handler = None  # Reset the `data_handler` attribute.
         query_type = "locations"
         coll = self.get_collection(coll_id)
         available_query_types = self.get_query_types(coll_id)
@@ -301,6 +302,7 @@ class EDRInterface(object):
         and submitted to the EDR Server without further checks.
 
         """
+        self.data_handler = None  # Reset the `data_handler` attribute.
         coll = self.get_collection(coll_id)
         available_query_types = self.get_query_types(coll_id)
         assert query_type in available_query_types, f"Query type {query_type!r} not supported by server."
