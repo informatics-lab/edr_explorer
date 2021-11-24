@@ -34,7 +34,7 @@ class EDRExplorer(param.Parameterized):
     submit_button = widgets.Button(description="Submit", disabled=True)
     wlist = [coll, locations, datasets, start_time, end_time]  # Metadata widgets.
     pwlist = [pc_times, pc_params]  # Plot widgets.
-    wbox = widgets.VBox(wlist + [data_error_box])
+    wbox = widgets.VBox(wlist)
     pwbox = widgets.HBox(pwlist)
 
     def __init__(self, server_address=None):
@@ -92,6 +92,10 @@ class EDRExplorer(param.Parameterized):
             at the web address specified in the `Server` text field widget; and one to submit a
             query to the EDR Server via the `.interface.EDRInterface` instance based on the values
             set in the selector widgets
+          * the widgets column on the left also contains two fields for displaying error messages
+            when connecting to or retrieving data from the EDR Server. These are hidden by
+            default and are made visible when there is a relevant error message to display. Once
+            the error has been resolved the field will become hidden again.
           * the plot area on the right contains two plot control widgets to select specific data
             from queries submitted to the EDR Server to show on the plot
 
@@ -100,20 +104,29 @@ class EDRExplorer(param.Parameterized):
             pn.Column(self.coll_uri, self.connect_error_box),
             self.connect_button
         )
-        control_row = pn.Row(self.wbox, self.submit_button, align=("end", "start"))
+        control_widgets = pn.Column(self.wbox, self.data_error_box)
+        control_row = pn.Row(control_widgets, self.submit_button, align=("end", "start"))
         plot_col = pn.Column(self.plot, self.pwbox)
         control_col = pn.Column(connect_row, control_row)
         return pn.Row(control_col, plot_col).servable()
 
-    def _populate_error_box(self, error_box, errors):
+    def _populate_error_box(self, error_box_ref, errors):
+        error_box = getattr(self, error_box_ref)
+        good_layout = widgets.Layout(
+            display="none",
+            visibility="hidden",
+            border="none",
+        )
         bad_layout = widgets.Layout(
             border="2px solid #dc3545",
             padding="0.05rem 0.5rem",
             margin="0 0.25rem 0 5.625rem",
             width="70%",
+            overflow="auto",
+            display="flex",
         )
         error_box.value = errors
-        error_box.layout = bad_layout
+        error_box.layout = good_layout if errors == "" else bad_layout
 
     def _load_collections(self, event):
         """
@@ -125,14 +138,21 @@ class EDRExplorer(param.Parameterized):
         server_loc = self.coll_uri.value
         self.edr_interface = EDRInterface(server_loc)
 
+        error_box = "connect_error_box"
+        if self.edr_interface.errors is None:
+            # Independent check to see if we can clear the error box.
+            self._populate_error_box(error_box, "")
         if self.edr_interface.json is not None and self.edr_interface.errors is None:
+            # The only state in which the controls can be populated and enabled.
             self.coll.options = [(ct, cid) for (cid, ct) in zip(self.edr_interface.collection_ids, self.edr_interface.collection_titles)]
             self.coll.value = self.edr_interface.collection_ids[0]
             self._enable_controls()
         elif self.edr_interface.errors is not None:
-            self._populate_error_box(self.connect_error_box, self.edr_interface.errors)
+            # We have known errors to show.
+            self._populate_error_box(error_box, self.edr_interface.errors)
         else:
-            self._populate_error_box(self.connect_error_box, "UnspecifiedError")
+            # Something else has gone wrong, which we need to show.
+            self._populate_error_box(error_box, "UnspecifiedError")
 
     def _enable_controls(self):
         """Enable query control widgets in the left column."""
@@ -202,6 +222,10 @@ class EDRExplorer(param.Parameterized):
         # Get dataset.
         self.edr_interface.query_locations(coll_id, locations, param_names, start_date, end_date)
 
+        error_box = "data_error_box"
+        if self.edr_interface.errors is None:
+            # Independent check to see if we can clear the error box.
+            self._populate_error_box(error_box, "")
         if self.edr_interface.data_handler is not None and self.edr_interface.errors is None:
             # Generate and enable the plot controls.
             plot_control_times = list(self.edr_interface.data_handler.coords["t"])
@@ -214,9 +238,9 @@ class EDRExplorer(param.Parameterized):
 
             self._enable_plot_controls()
         elif self.edr_interface.errors is not None:
-            self._populate_error_box(self.data_error_box, self.edr_interface.errors)
+            self._populate_error_box(error_box, self.edr_interface.errors)
         else:
-            self._populate_error_box(self.data_error_box, "UnspecifiedError (data retrieval)")
+            self._populate_error_box(error_box, "UnspecifiedError (data retrieval)")
 
     def _plot_change(self, _):
         """
@@ -237,6 +261,10 @@ class EDRExplorer(param.Parameterized):
         showable = tiles
         if self._data_key != "":
             dataset = self.edr_interface.data_handler[self._data_key]
+            error_box = "data_error_box"
+            if self.edr_interface.data_handler.errors is None:
+                # Independent check to see if we can clear the data error box.
+                self._populate_error_box(error_box, "")
             if dataset is not None and self.edr_interface.data_handler.errors is None:
                 showable = tiles * dataset.to(
                     gv.Image,
@@ -244,12 +272,12 @@ class EDRExplorer(param.Parameterized):
                 ).opts(cmap="viridis", alpha=0.75)
             elif self.edr_interface.data_handler.errors is not None:
                 self._populate_error_box(
-                    self.data_error_box,
+                    error_box,
                     self.edr_interface.data_handler.errors
                 )
             else:
                 self._populate_error_box(
-                    self.data_error_box,
+                    error_box,
                     "Unspecified error (plotting)"
                 )
         return showable
