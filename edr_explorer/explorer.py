@@ -135,6 +135,7 @@ class EDRExplorer(param.Parameterized):
         Set up the EDR interface instance and connect to the server's collections.
 
         """
+        self._clear_controls()
         server_loc = self.coll_uri.value
         self.edr_interface = EDRInterface(server_loc)
 
@@ -159,6 +160,18 @@ class EDRExplorer(param.Parameterized):
         for widget in self.wlist:
             widget.disabled = False
         self.submit_button.disabled = False
+
+    def _clear_controls(self):
+        """Clear state of all control widgets and disable them."""
+        for widget in self.wlist:
+            widget.disabled = True
+            if isinstance(widget, widgets.SelectMultiple):
+                widget.options = ("",)
+                widget.value = ("",)
+            else:
+                widget.options = []
+                widget.value = None
+        self.submit_button.disabled = True
 
     def _enable_plot_controls(self):
         """Enable plot control widgets for updating the specific data shown on the plot."""
@@ -200,9 +213,11 @@ class EDRExplorer(param.Parameterized):
 
         """
         start_time_selected = change["new"]
-        times = self.start_time.options
-        sel_idx = times.index(start_time_selected)
-        self.end_time.options = times[sel_idx:]
+        if start_time_selected is not None:
+            # Avoid errors when clearing widget state.
+            times = self.start_time.options
+            sel_idx = times.index(start_time_selected)
+            self.end_time.options = times[sel_idx:]
 
     def _request_plot_data(self, _):
         """
