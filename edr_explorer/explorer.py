@@ -164,7 +164,7 @@ class EDRExplorer(param.Parameterized):
         self.submit_button.disabled = False
 
     def _clear_controls(self):
-        """Clear state of all control widgets and disable them."""
+        """Clear state of all control and error display widgets and disable them."""
         for widget in self.wlist + self.pwlist:
             widget.disabled = True
             if isinstance(widget, widgets.SelectMultiple):
@@ -177,6 +177,8 @@ class EDRExplorer(param.Parameterized):
                 widget.options = []
                 widget.value = None
         self.submit_button.disabled = True
+        self._populate_error_box("connect_error_box", "")
+        self._populate_error_box("data_error_box", "")
 
     def _enable_plot_controls(self):
         """Enable plot control widgets for updating the specific data shown on the plot."""
