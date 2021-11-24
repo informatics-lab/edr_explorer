@@ -20,6 +20,8 @@ class EDRExplorer(param.Parameterized):
     datasets = widgets.SelectMultiple(options=[], description="Datasets", disabled=True)
     start_time = widgets.Dropdown(options=[], description='Start Date', disabled=True)
     end_time = widgets.Dropdown(options=[], description='End Date', disabled=True)
+
+    # Error display widgets.
     connect_error_box = widgets.HTML("", layout=widgets.Layout(display="none"))
     data_error_box = widgets.HTML("", layout=widgets.Layout(display="none"))
 
@@ -135,6 +137,7 @@ class EDRExplorer(param.Parameterized):
         Set up the EDR interface instance and connect to the server's collections.
 
         """
+        self._clear_controls()
         server_loc = self.coll_uri.value
         self.edr_interface = EDRInterface(server_loc)
 
@@ -159,6 +162,21 @@ class EDRExplorer(param.Parameterized):
         for widget in self.wlist:
             widget.disabled = False
         self.submit_button.disabled = False
+
+    def _clear_controls(self):
+        """Clear state of all control widgets and disable them."""
+        for widget in self.wlist + self.pwlist:
+            widget.disabled = True
+            if isinstance(widget, widgets.SelectMultiple):
+                widget.options = ("",)
+                widget.value = ("",)
+            elif isinstance(widget, widgets.SelectionSlider):
+                widget.options = ("",)
+                widget.value = ""
+            else:
+                widget.options = []
+                widget.value = None
+        self.submit_button.disabled = True
 
     def _enable_plot_controls(self):
         """Enable plot control widgets for updating the specific data shown on the plot."""
@@ -200,9 +218,11 @@ class EDRExplorer(param.Parameterized):
 
         """
         start_time_selected = change["new"]
-        times = self.start_time.options
-        sel_idx = times.index(start_time_selected)
-        self.end_time.options = times[sel_idx:]
+        if start_time_selected is not None:
+            # Avoid errors when clearing widget state.
+            times = self.start_time.options
+            sel_idx = times.index(start_time_selected)
+            self.end_time.options = times[sel_idx:]
 
     def _request_plot_data(self, _):
         """
@@ -251,7 +271,7 @@ class EDRExplorer(param.Parameterized):
         param = self.pc_params.value
         t = self.pc_times.value
         # Make sure both widgets are populated.
-        if param is not None and t is not None:
+        if param is not None and t not in (None, ""):
             self._data_key = self.edr_interface.data_handler.make_key(param, {"t": t})
 
     @param.depends('_data_key')
