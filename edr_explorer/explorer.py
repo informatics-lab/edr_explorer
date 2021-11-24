@@ -20,6 +20,8 @@ class EDRExplorer(param.Parameterized):
     datasets = widgets.SelectMultiple(options=[], description="Datasets", disabled=True)
     start_time = widgets.Dropdown(options=[], description='Start Date', disabled=True)
     end_time = widgets.Dropdown(options=[], description='End Date', disabled=True)
+
+    # Error display widgets.
     connect_error_box = widgets.HTML("", layout=widgets.Layout(display="none"))
     data_error_box = widgets.HTML("", layout=widgets.Layout(display="none"))
 
@@ -163,11 +165,14 @@ class EDRExplorer(param.Parameterized):
 
     def _clear_controls(self):
         """Clear state of all control widgets and disable them."""
-        for widget in self.wlist:
+        for widget in self.wlist + self.pwlist:
             widget.disabled = True
             if isinstance(widget, widgets.SelectMultiple):
                 widget.options = ("",)
                 widget.value = ("",)
+            elif isinstance(widget, widgets.SelectionSlider):
+                widget.options = ("",)
+                widget.value = ""
             else:
                 widget.options = []
                 widget.value = None
@@ -266,7 +271,7 @@ class EDRExplorer(param.Parameterized):
         param = self.pc_params.value
         t = self.pc_times.value
         # Make sure both widgets are populated.
-        if param is not None and t is not None:
+        if param is not None and t not in (None, ""):
             self._data_key = self.edr_interface.data_handler.make_key(param, {"t": t})
 
     @param.depends('_data_key')
