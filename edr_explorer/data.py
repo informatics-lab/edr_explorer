@@ -167,6 +167,7 @@ class DataHandler(object):
         return result
 
     def get_colours(self, param_name):
+        """Get a single colours reference from `self.colours`, or populate it if not present."""
         if self.colours.get(param_name) is not None:
             result = self.colours[param_name]
         else:
@@ -191,6 +192,12 @@ class DataHandler(object):
         return param_name, coords_dict
 
     def _build_custom_cmap(self, param_name):
+        """
+        Retrieve categorised colour and level information from the data JSON, if present.
+
+        If no such information is present, the result will be `None`.
+        
+        """
         try:
             categories = self.data_json["parameters"][param_name]["categoryEncoding"]
         except KeyError:
