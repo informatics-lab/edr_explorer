@@ -25,6 +25,7 @@ class DataHandler(object):
         """
         self.data_json = data_json
         self.cache = {}
+        self.colours = {}
 
         self._errors = None
         self._coords = None
@@ -114,10 +115,15 @@ class DataHandler(object):
 
     def _build_geoviews(self, array, param_name):
         """Construct a GeoViews Dataset object from an nD array data response."""
+        colours = self.get_colours(param_name)
+        if colours is not None:
+            data = np.ma.masked_less(array[0], colours["vmin"])
+        else:
+            data = np.ma.masked_invalid(array[0])
         ds = HVDataset(
-            data=(self.coords["y"], self.coords["x"], np.ma.masked_invalid(array[0])),
+            data=(self.coords["y"], self.coords["x"], data),
             kdims=["latitude", "longitude"],
-            vdims=param_name
+            vdims=param_name,
         )
         return ds.to(GVDataset, crs=self.crs)
 
@@ -160,6 +166,15 @@ class DataHandler(object):
             self.cache[key] = result
         return result
 
+    def get_colours(self, param_name):
+        """Get a single colours reference from `self.colours`, or populate it if not present."""
+        if self.colours.get(param_name) is not None:
+            result = self.colours[param_name]
+        else:
+            result = self._build_custom_cmap(param_name)
+            self.colours[param_name] = result
+        return result
+
     def make_key(self, param, coords_dict):
         """Define the standard form for keys in the data cache."""
         coord_str = ','.join([f"{k}={coords_dict[k]}" for k in sorted(coords_dict)])
@@ -175,6 +190,30 @@ class DataHandler(object):
         param_name = param.split("=")[1]
         coords_dict = {c.split("=")[0]: c.split("=")[1] for c in coords}
         return param_name, coords_dict
+
+    def _build_custom_cmap(self, param_name):
+        """
+        Retrieve categorised colour and level information from the data JSON, if present.
+
+        If no such information is present, the result will be `None`.
+        
+        """
+        try:
+            categories = self.data_json["parameters"][param_name]["categoryEncoding"]
+        except KeyError:
+            result = None
+        else:
+            colours = list(categories.keys())
+            values = list(categories.values())
+            vmin, vmax = min(values), max(values)
+            high_value, = np.diff(values[-2:])
+            result = {
+                "colours": colours,
+                "values": values + [high_value],
+                "vmin": vmin,
+                "vmax": vmax
+            }
+        return result
 
     # def _prepare_json(self):
     #     param_names = list(self.data_json["parameters"].keys())

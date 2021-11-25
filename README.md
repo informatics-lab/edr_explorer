@@ -37,6 +37,21 @@ This can be used either in a notebook or in a Python script that can be served b
 panel serve --show run.py
 ```
 
+### Tips and tricks
+
+#### Plot options
+
+The explorer interface sets a limited number of options for plotting the selected data, specifically the colormap of the plotted data and its alpha (transparency). The values for these options are publically accessible, and can be customised for a specifed interface instance as follows:
+
+```python
+explorer.cmap = "inferno"
+explorer.alpha = 0.75
+```
+
+This assumes that you have set up an explorer interface called `explorer` as per the Python code above. The colormap can be set as any valid reference to a colormap from [matplotlib](https://matplotlib.org/stable/gallery/color/colormap_reference.html) or [colorcet](https://colorcet.holoviz.org/), including as simple string names of the colormap, as shown here.
+
+#### Pre-populate the EDR Server address
+
 You can also pass the URI for a running EDR Server to the explorer interface when you instantiate it. For example:
 
 ```python
