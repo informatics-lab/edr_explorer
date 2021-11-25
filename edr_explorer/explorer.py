@@ -30,11 +30,13 @@ class EDRExplorer(param.Parameterized):
     pc_params = widgets.Dropdown(options=[], description="Parameter", disabled=True)
     use_colours = pn.widgets.Checkbox(name="Use supplied colours", disabled=True)
     use_levels = pn.widgets.Checkbox(name="Use supplied levels", disabled=True)
+
+    # Parameters for triggering plot updates.
+    _data_key = param.String("")
+    _colours = param.Boolean(use_colours.value)
+    _levels = param.Boolean(use_levels.value)
     cmap = param.String("viridis")
     alpha = param.Magnitude(0.85)
-
-    # Dataset reference.
-    _data_key = param.String("")
 
     connect_button = widgets.Button(description="Connect")
     submit_button = widgets.Button(description="Submit", disabled=True)
@@ -69,6 +71,8 @@ class EDRExplorer(param.Parameterized):
         self.start_time.observe(self._filter_end_time, names='value')
         self.pc_times.observe(self._plot_change, names='value')
         self.pc_params.observe(self._plot_change, names='value')
+        self.use_colours.param.watch(self._checkbox_change, "value", onlychanged=True)
+        self.use_levels.param.watch(self._checkbox_change, "value", onlychanged=True)
 
     @property
     def edr_interface(self):
@@ -201,6 +205,18 @@ class EDRExplorer(param.Parameterized):
         for box in self.pchecklist:
             box.disabled = box_disabled
 
+    def _checkbox_change(self, event):
+        """
+        Bind a change in a checkbox to the relevant param object to trigger
+        a plot update.
+
+        """
+        name = event.obj.name
+        if "colour" in name:
+            self._colours = event.new
+        elif "level" in name:
+            self._levels = event.new
+
     def _enable_plot_controls(self):
         """Enable plot control widgets for updating the specific data shown on the plot."""
         for widget in self.pwlist:
@@ -299,7 +315,7 @@ class EDRExplorer(param.Parameterized):
         if param is not None and t not in (None, ""):
             self._data_key = self.edr_interface.data_handler.make_key(param, {"t": t})
 
-    @param.depends('_data_key', 'cmap', 'alpha')
+    @param.depends('_data_key', '_colours', '_levels', 'cmap', 'alpha')
     def plot(self):
         """Show data from a data request to the EDR Server on the plot."""
         tiles = gv.tile_sources.Wikipedia.opts(width=800, height=600)
@@ -311,6 +327,10 @@ class EDRExplorer(param.Parameterized):
             colours = self.edr_interface.data_handler.get_colours(self.pc_params.value)
             if colours is not None:
                 opts.update({"clim": (colours["vmin"], colours["vmax"])})
+                if self.use_colours.value:
+                    opts["cmap"] = colours["colours"]
+                if self.use_levels.value:
+                    opts["color_levels"] = colours["values"]
 
             error_box = "data_error_box"
             if self.edr_interface.data_handler.errors is None:
