@@ -56,6 +56,10 @@ class EDRExplorer(param.Parameterized):
 
         super().__init__()
 
+        # Public plot opts.
+        self.cmap = "viridis"
+        self.alpha = 0.85
+
         self._edr_interface = None
 
         self.connect_button.on_click(self._load_collections)
@@ -283,7 +287,7 @@ class EDRExplorer(param.Parameterized):
         showable = tiles
         if self._data_key != "":
             dataset = self.edr_interface.data_handler[self._data_key]
-            opts = {"cmap": "viridis", "alpha": 0.9}
+            opts = {"cmap": self.cmap, "alpha": self.alpha}
 
             colours = self.edr_interface.data_handler.get_colours(self.pc_params.value)
             if colours is not None:
