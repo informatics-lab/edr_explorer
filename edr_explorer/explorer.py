@@ -283,6 +283,12 @@ class EDRExplorer(param.Parameterized):
         showable = tiles
         if self._data_key != "":
             dataset = self.edr_interface.data_handler[self._data_key]
+            opts = {"cmap": "viridis", "alpha": 0.9}
+
+            colours = self.edr_interface.data_handler.get_colours(self.pc_params.value)
+            if colours is not None:
+                opts.update({"clim": (colours["vmin"], colours["vmax"])})
+
             error_box = "data_error_box"
             if self.edr_interface.data_handler.errors is None:
                 # Independent check to see if we can clear the data error box.
@@ -291,7 +297,7 @@ class EDRExplorer(param.Parameterized):
                 showable = tiles * dataset.to(
                     gv.Image,
                     ['longitude', 'latitude']
-                ).opts(cmap="viridis", alpha=0.75)
+                ).opts(**opts)
             elif self.edr_interface.data_handler.errors is not None:
                 self._populate_error_box(
                     error_box,
