@@ -28,6 +28,8 @@ class EDRExplorer(param.Parameterized):
     # Plot control widgets.
     pc_times = widgets.SelectionSlider(options=[""], description="Timestep", disabled=True)
     pc_params = widgets.Dropdown(options=[], description="Parameter", disabled=True)
+    cmap = param.String("viridis")
+    alpha = param.Magnitude(0.85)
 
     # Dataset reference.
     _data_key = param.String("")
@@ -55,10 +57,6 @@ class EDRExplorer(param.Parameterized):
             self.coll_uri.value = self.server_address
 
         super().__init__()
-
-        # Public plot opts.
-        self.cmap = "viridis"
-        self.alpha = 0.85
 
         self._edr_interface = None
 
@@ -280,7 +278,7 @@ class EDRExplorer(param.Parameterized):
         if param is not None and t not in (None, ""):
             self._data_key = self.edr_interface.data_handler.make_key(param, {"t": t})
 
-    @param.depends('_data_key')
+    @param.depends('_data_key', 'cmap', 'alpha')
     def plot(self):
         """Show data from a data request to the EDR Server on the plot."""
         tiles = gv.tile_sources.Wikipedia.opts(width=800, height=600)

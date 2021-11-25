@@ -48,8 +48,7 @@ explorer.cmap = "inferno"
 explorer.alpha = 0.75
 ```
 
-This assumes that you have set up an explorer interface as per the Python code above. The colormap can be
-set as any valid reference to a colormap from [matplotlib](https://matplotlib.org/stable/gallery/color/colormap_reference.html) or [colorcet](https://colorcet.holoviz.org/), including as simple string names of the colormap, as shown here.
+This assumes that you have set up an explorer interface called `explorer` as per the Python code above. The colormap can be set as any valid reference to a colormap from [matplotlib](https://matplotlib.org/stable/gallery/color/colormap_reference.html) or [colorcet](https://colorcet.holoviz.org/), including as simple string names of the colormap, as shown here.
 
 #### Pre-populate the EDR Server address
 
