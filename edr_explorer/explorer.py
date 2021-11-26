@@ -221,6 +221,7 @@ class EDRExplorer(param.Parameterized):
             box.value = False
             box.disabled = True
         self.submit_button.disabled = True
+        self.dataset_button.disabled = True
         self._populate_error_box("connect_error_box", "")
         self._populate_error_box("data_error_box", "")
 
@@ -251,6 +252,7 @@ class EDRExplorer(param.Parameterized):
         """Enable plot control widgets for updating the specific data shown on the plot."""
         for widget in self.pwlist:
             widget.disabled = False
+        self.dataset_button.disabled = False
         self._check_enable_checkboxes()
 
     def _populate_contents_callback(self, change):
@@ -303,7 +305,10 @@ class EDRExplorer(param.Parameterized):
         object (such as an Iris Cube).
 
         """
-        dataset = None
+        # XXX somewhere we should check if the server supports `Cube` queries,
+        #     and preferentially use that if available.
+        from .dataset import make_dataset
+        dataset = make_dataset(self.edr_interface.data_handlers)
         self.dataset = dataset
 
     def _request_plot_data(self, _):

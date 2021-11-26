@@ -1,7 +1,8 @@
-import numpy as np
+from itertools import product as iproduct
 
 from geoviews import Dataset as GVDataset
 from holoviews import Dataset as HVDataset
+import numpy as np
 
 from .lookup import CRS_LOOKUP, TRS_LOOKUP
 from .util import dict_list_search, get_request
@@ -16,6 +17,7 @@ class DataHandler(object):
     EDR Server.
 
     """
+    axes_order = ["e", "t", "z", "y", "x"]
     horizontal_axes_names = ["x", "y", "latitude", "longitude"]  # May need to be extended.
 
     def __init__(self, data_json):
@@ -28,12 +30,17 @@ class DataHandler(object):
         self.colours = {}
 
         self._errors = None
+        self._param_names = None
         self._coords = None
+        self._selection_axes = None
+        self._all_query_keys = None
+        self._all_data = None
         self._crs = None
         self._trs = None
 
     @property
     def errors(self):
+        """Capture any errors generated when making a request to the EDR Server."""
         return self._errors
 
     @errors.setter
@@ -41,7 +48,19 @@ class DataHandler(object):
         self._errors = value
 
     @property
+    def param_names(self):
+        """List of all parameter names present in `self.data_json`."""
+        if self._param_names is None:
+            self.param_names = list(self.data_json["parameters"].keys())
+        return self._param_names
+
+    @param_names.setter
+    def param_names(self, value):
+        self._param_names = value
+
+    @property
     def coords(self):
+        """Dict {"axis_name": points_array} of all coords present in `self.data_json`."""
         if self._coords is None:
             self._build_coords()
         return self._coords
@@ -51,7 +70,56 @@ class DataHandler(object):
         self._coords = value
 
     @property
+    def selection_axes(self):
+        """
+        List of all axis names present in `self.data_json` for which
+        a data array can be selected.
+
+        Functionally this is equivalent to all non-horizontal axis names.
+
+        """
+        if self._selection_axes is None:
+            axes_names = list(self.coords.keys())
+            self.selection_axes = list(set(axes_names) - set(self.horizontal_axes_names))
+        return self._selection_axes
+
+    @selection_axes.setter
+    def selection_axes(self, value):
+        self._selection_axes = value
+
+    @property
+    def all_query_keys(self):
+        """
+        A list of all possible valid query keys that could be passed to `self.get_item`
+        and thus return a valid data response from the EDR Server.
+
+        """
+        if self._all_query_keys is None:
+            self.all_query_keys = self.get_combinations()
+        return self._all_query_keys
+
+    @all_query_keys.setter
+    def all_query_keys(self, value):
+        self._all_query_keys = value
+
+    @property
+    def all_data(self):
+        """
+        A dict of NumPy arrays of all data values for all combinations of parameter names
+        and selection coordinate points present in `self.data_json`.
+
+        """
+        if self._all_data is None:
+            self.all_data = self.get_all_data()
+        return self._all_data
+
+    @all_data.setter
+    def all_data(self, value):
+        self._all_data = value
+
+    @property
     def crs(self):
+        """Common coordinate reference system (crs) for all data represented by `self.data_json`."""
         if self._crs is None:
             self._get_data_crs()
         return self._crs
@@ -215,24 +283,67 @@ class DataHandler(object):
             }
         return result
 
-    # def _prepare_json(self):
-    #     param_names = list(self.data_json["parameters"].keys())
-    #     all_coords = list(self.data_json["domain"]["axes"].keys())
-    #     template_coords = set(all_coords) - set(self.horizontal_coords)
-    #     coords = {}
-    #     for coord in template_coords:
-    #         coord_data = self.data_json["domain"]["axes"][coord]
-    #         keys = list(coord_data.keys())
-    #         if "start" in keys:
-    #             coord_points = list(
-    #                 np.linspace(coord_data["start"],
-    #                             coord_data["stop"],
-    #                             coord_data["num"]
-    #                 )
-    #             )
-    #         elif "values" in keys:
-    #             coord_points = list(coord_data["values"])
-    #         else:
-    #             bad_keys = ", ".join(keys)
-    #             raise KeyError(f"Could not build coordinate from keys: {bad_keys!r}.")
-    #         coords[coord] = coord_points
+    def build_data_array(self, param_name):
+        axis_names = self.data_json["ranges"][param_name]["axisNames"]
+        shape = self.data_json["ranges"][param_name]["shape"]
+        # single_array_shape = self.data_json["ranges"][param_name]["tileSets"][0]["tileShape"]
+        relevant_queries = filter(
+            lambda q: q[0] == param_name,
+            self.all_query_keys
+        )
+        template_array = np.empty(shape)
+        for query in relevant_queries:
+            param, coords_dict = query
+            array = self.get_item(param, coords_dict)
+
+            axes = list(coords_dict.keys())
+            insertion_inds = [slice(None)] * len(axis_names)
+            for axis in axes:
+                data_idx = coords_dict[axis]
+                insert_idx = axis_names.index(axis)
+                slc = slice(data_idx, data_idx+1)
+                insertion_inds[insert_idx] = slc
+            template_array[tuple(insertion_inds)] = array
+        return template_array
+
+    def get_all_data(self):
+        """
+        Build the full data array across all selection coord points for
+        all parameter names.
+
+        """
+        params_and_data = {}
+        for param_name in self.param_names:
+            data = self.build_data_array(param_name)
+            params_and_data[param_name] = data
+        return params_and_data
+
+    def get_combinations(self):
+        """
+        Return a list of all possible combinations of keys for requesting
+        data values from the EDR Server based on the list of parameter names
+        and selection axes present in `self.data_json`.
+
+        """
+        # Construct a dict of all selection axes and their coord values lists.
+        # e.g. - {"t": [1, 2], "z": [2, 10]}
+        coords_values = {axis: self.coords[axis] for axis in self.selection_axes}
+
+        # Split `coords_values` into lists of {axis: point} dicts.
+        # e.g. - [[{"t": 1}, {"t", 2}], [{"z": 2}, {"z": 10}]]
+        selection_coords_keys = []
+        for axis, points in coords_values.items():
+            pairwise = [{axis: i} for i in points]
+            selection_coords_keys.append(pairwise)
+
+        # Combine all combinations of {axis: point} dicts per axis to construct
+        # every possible `coord_dict` combination for a __getitem__ request.
+        # e.g. [{"t": 1, "z": 2}, {"t": 1, "z": 10}, {"t": 2, "z": 2}, {"t": 2, "z": 10}]
+        all_coord_dicts = map(
+            lambda d: {k: v for itm in d for k, v in itm.items()},
+            iproduct(*selection_coords_keys)
+        )
+
+        # Finally combine all_coord_dicts with the list of parameter names.
+        # e.g. [("name", {"t": 1, "z": 2}), ("name", {"t": 1, "z": 10}), ...]
+        return iproduct(self.param_names, all_coord_dicts)
