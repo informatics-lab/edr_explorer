@@ -308,7 +308,7 @@ class EDRExplorer(param.Parameterized):
         # XXX somewhere we should check if the server supports `Cube` queries,
         #     and preferentially use that if available.
         from .dataset import make_dataset
-        dataset = make_dataset(self.edr_interface.data_handlers)
+        dataset = make_dataset(self.edr_interface.data_handlers, self.pc_params.value)
         self.dataset = dataset
 
     def _request_plot_data(self, _):

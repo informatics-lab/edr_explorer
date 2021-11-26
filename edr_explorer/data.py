@@ -17,7 +17,6 @@ class DataHandler(object):
     EDR Server.
 
     """
-    axes_order = ["e", "t", "z", "y", "x"]
     horizontal_axes_names = ["x", "y", "latitude", "longitude"]  # May need to be extended.
 
     def __init__(self, data_json):
@@ -32,6 +31,7 @@ class DataHandler(object):
         self._errors = None
         self._param_names = None
         self._coords = None
+        self._units = None
         self._selection_axes = None
         self._all_query_keys = None
         self._all_data = None
@@ -68,6 +68,17 @@ class DataHandler(object):
     @coords.setter
     def coords(self, value):
         self._coords = value
+
+    @property
+    def units(self):
+        """A dictionary mapping parameter names to their unit strings."""
+        if self._units is None:
+            self.units = self._get_units()
+        return self._units
+
+    @units.setter
+    def units(self, value):
+        self._units = value
 
     @property
     def selection_axes(self):
@@ -128,6 +139,17 @@ class DataHandler(object):
     def crs(self, value):
         self._crs = value
 
+    @property
+    def trs(self):
+        """Common time-coord reference system (trs) for all data represented by `self.data_json`."""
+        if self._trs is None:
+            self._get_data_trs()
+        return self._trs
+
+    @trs.setter
+    def trs(self, value):
+        self._trs = value
+
     def __getitem__(self, key):
         if not isinstance(key, str):
             emsg = "Key must be a string defining data parameter name and coord values."
@@ -172,6 +194,13 @@ class DataHandler(object):
             coords[axis_name] = coord_points
         self.coords = coords
 
+    def _get_units(self):
+        units_dict = {}
+        for name in self.param_names:
+            unit_string = self.data_json["parameters"][name]["unit"]["symbol"]["value"]
+            units_dict[name] = unit_string
+        return units_dict
+
     def _get_data_crs(self):
         """Retrieve the horizontal coordinate reference system from `data_json`."""
         ref_systems = self.data_json["domain"]["referencing"]
@@ -179,6 +208,13 @@ class DataHandler(object):
         crs_axes = sorted(list(set(axes_names) & set(self.horizontal_axes_names)))
         ref = dict_list_search(ref_systems, "coordinates", crs_axes)
         crs_type = ref["system"]["type"]
+        self.crs = CRS_LOOKUP[crs_type]
+
+    def _get_data_trs(self):
+        """Retrieve the time coordinate reference system from `data_json`."""
+        ref_systems = self.data_json["domain"]["referencing"]
+        ref = dict_list_search(ref_systems, "coordinates", "t")
+        crs_type = ref["system"]["calendar"]
         self.crs = CRS_LOOKUP[crs_type]
 
     def _build_geoviews(self, array, param_name):

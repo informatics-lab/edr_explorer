@@ -45,3 +45,15 @@ CRS_LOOKUP = {
 TRS_LOOKUP = {
     "Gregorian Calendar": "gregorian",
 }
+
+
+UNITS_LOOKUP = {
+    ccrs.PlateCarree(): "degrees",
+    ccrs.Mercator(): "m",
+}
+
+
+AXES_ORDER = ["e", "t", "z", "y", "x"]
+
+
+ISO_DATE_FMT_STR = "%Y-%m-%dT%H:%MZ"
