@@ -8,9 +8,11 @@ from iris.cube import Cube, CubeList
 import numpy as np
 
 from .lookup import (
+    AXES_ORDER,
     HORIZONTAL_AXES_LOOKUP,
     ISO_DATE_FMT_STR,
     UNITS_LOOKUP,
+    WGS84_EARTH_RADIUS,
 )
 
 
@@ -25,24 +27,32 @@ class _Dataset(object):
 
 class IrisCubeDataset(_Dataset):
     def __init__(self, data_handler, name):
-        super().__init__(data_handler, name)
+        super().__init__(data_handler, names=name)
 
     def _handle_time_coord(self, values):
         epoch = "days since 1970-01-01"
         calendar = self.data_handler.trs.lower()
-        units = Unit(epoch, calendar=calendar)
+        unit = Unit(epoch, calendar=calendar)
+        dts = [datetime.datetime.strptime(s, ISO_DATE_FMT_STR) for s in values]
+        points = [unit.date2num(dt) for dt in dts]
+        return unit, points
 
-        points = [datetime.datetime.strptime(s, ISO_DATE_FMT_STR) for s in values]
-        return units, points
+    # def _get_data(self):
+    #     data = self.data_handler.all_data[self.names]
+    #     subset_inds = [slice(None)] * len(self.data_handler.coords.keys())
+    #     for axis in self.data_handler.selection_axes:
+    #         axis_ind = self.data_handler.coords.keys().index(axis)
+    #     return data
 
     def build_coord(self, axis_name):
         values = self.data_handler.coords[axis_name]
 
         if axis_name in HORIZONTAL_AXES_LOOKUP.keys():
             crs = self.data_handler.crs
-            if isinstance(crs, ccrs.PlateCarree()):
-                ref_sys = GeogCS()
-            units = UNITS_LOOKUP[ref_sys]
+            if isinstance(crs, ccrs.PlateCarree):
+                ref_sys = GeogCS(WGS84_EARTH_RADIUS)
+                ref_sys_ref = "GeogCS"
+            units = UNITS_LOOKUP[ref_sys_ref]
             points = np.array(values)
         elif axis_name == "t":
             ref_sys = None
@@ -61,16 +71,21 @@ class IrisCubeDataset(_Dataset):
         return coord
 
     def build_dataset(self):
-        axes = self.data_handler.coords.keys()
+        axes = sorted(
+            self.data_handler.coords.keys(),
+            key=lambda i: AXES_ORDER.index(i)
+        )
         dcad = []
         for i, axis in enumerate(axes):
             coord = self.build_coord(axis)
-            dcad.append(coord, i)
+            dcad.append((coord, i))
+
+        # data = self._get_data()
 
         cube = Cube(
-            self.data_handler.all_data[self.name],
-            long_name=self.name,
-            units=self.data_handler.units[self.name].replace("/", " "),
+            self.data_handler.all_data[self.names],
+            long_name=self.names,
+            units=self.data_handler.units[self.names].replace("/", " "),
             dim_coords_and_dims=dcad,
         )
         return cube
@@ -93,11 +108,13 @@ def make_dataset(data_handler, names, to="iris"):
     if to not in valid_handers:
         emsg = f"`to` must be one of: {','.join(valid_handers)!r}; got {to}."
         raise ValueError(emsg)
+    if isinstance(names, str):
+        names = [names]
 
     n_params = len(names)  # XXX watch out for a string iterable!
     if to == "iris":
         if n_params == 1:
-            provider = IrisCubeDataset(data_handler, names)
+            provider = IrisCubeDataset(data_handler, names[0])
         elif n_params > 1:
             provider = IrisCubeListDataset(data_handler, names)
         else:

@@ -268,8 +268,6 @@ class EDRInterface(object):
         )
         data_json = self._get_covjson(query_str)
         self.data_handler = DataHandler(data_json)
-        # self.data_handler = None
-        # self.errors = "DidntDataError"
 
     def query_items(self):
         """

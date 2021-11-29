@@ -1,6 +1,9 @@
 import cartopy.crs as ccrs
 
 
+WGS84_EARTH_RADIUS = 6371229
+
+
 HORIZONTAL_AXES_LOOKUP = {
     "x": [
         "x,"
@@ -44,12 +47,13 @@ CRS_LOOKUP = {
 
 TRS_LOOKUP = {
     "Gregorian Calendar": "gregorian",
+    "Gregorian": "gregorian",
 }
 
 
 UNITS_LOOKUP = {
-    ccrs.PlateCarree(): "degrees",
-    ccrs.Mercator(): "m",
+    "GeogCS": "degrees",
+    "Mercator": "m",
 }
 
 
