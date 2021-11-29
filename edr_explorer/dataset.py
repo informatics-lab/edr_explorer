@@ -37,13 +37,6 @@ class IrisCubeDataset(_Dataset):
         points = [unit.date2num(dt) for dt in dts]
         return unit, points
 
-    # def _get_data(self):
-    #     data = self.data_handler.all_data[self.names]
-    #     subset_inds = [slice(None)] * len(self.data_handler.coords.keys())
-    #     for axis in self.data_handler.selection_axes:
-    #         axis_ind = self.data_handler.coords.keys().index(axis)
-    #     return data
-
     def build_coord(self, axis_name):
         values = self.data_handler.coords[axis_name]
 
@@ -80,8 +73,6 @@ class IrisCubeDataset(_Dataset):
             coord = self.build_coord(axis)
             dcad.append((coord, i))
 
-        # data = self._get_data()
-
         cube = Cube(
             self.data_handler.all_data[self.names],
             long_name=self.names,
@@ -111,7 +102,7 @@ def make_dataset(data_handler, names, to="iris"):
     if isinstance(names, str):
         names = [names]
 
-    n_params = len(names)  # XXX watch out for a string iterable!
+    n_params = len(names)
     if to == "iris":
         if n_params == 1:
             provider = IrisCubeDataset(data_handler, names[0])
