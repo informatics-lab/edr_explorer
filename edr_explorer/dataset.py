@@ -21,13 +21,22 @@ class _Dataset(object):
         self.data_handler = data_handler
         self.names = names
 
+    def get_name(self, name):
+        if isinstance(self.names, dict):
+            result = self.names[name]
+        else:
+            result = name
+        return result
+
     def build_dataset(self):
         raise NotImplementedError
 
 
 class IrisCubeDataset(_Dataset):
-    def __init__(self, data_handler, name):
-        super().__init__(data_handler, names=name)
+    def __init__(self, data_handler, names):
+        super().__init__(data_handler, names)
+        self._key_name, = list(self.names.keys())
+        self._friendly_name, = list(self.names.values())
 
     def _handle_time_coord(self, values):
         epoch = "days since 1970-01-01"
@@ -74,11 +83,11 @@ class IrisCubeDataset(_Dataset):
             dcad.append((coord, i))
 
         cube = Cube(
-            self.data_handler.all_data[self.names],
-            long_name=self.names,
-            units=self.data_handler.units[self.names].replace("/", " "),
+            self.data_handler.all_data[self._key_name],
+            units=self.data_handler.units[self._key_name].replace("/", " "),
             dim_coords_and_dims=dcad,
         )
+        cube.rename(self._friendly_name)
         return cube
 
 
@@ -88,8 +97,8 @@ class IrisCubeListDataset(_Dataset):
 
     def build_dataset(self):
         cubes = []
-        for name in self.names:
-            cube = IrisCubeDataset(self.data_handler, name).build_dataset()
+        for k, v in self.names.items():
+            cube = IrisCubeDataset(self.data_handler, {k: v}).build_dataset()
             cubes.append(cube)
         return CubeList(cubes)
 
@@ -99,13 +108,11 @@ def make_dataset(data_handler, names, to="iris"):
     if to not in valid_handers:
         emsg = f"`to` must be one of: {','.join(valid_handers)!r}; got {to}."
         raise ValueError(emsg)
-    if isinstance(names, str):
-        names = [names]
 
     n_params = len(names)
     if to == "iris":
         if n_params == 1:
-            provider = IrisCubeDataset(data_handler, names[0])
+            provider = IrisCubeDataset(data_handler, names)
         elif n_params > 1:
             provider = IrisCubeListDataset(data_handler, names)
         else:
