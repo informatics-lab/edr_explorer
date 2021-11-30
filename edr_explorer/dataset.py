@@ -17,28 +17,45 @@ from .lookup import (
 
 
 class _Dataset(object):
+    """Abstract class to define construction of dataset objects."""
     def __init__(self, data_handler, names):
         self.data_handler = data_handler
         self.names = names
-
-    def get_name(self, name):
-        if isinstance(self.names, dict):
-            result = self.names[name]
-        else:
-            result = name
-        return result
 
     def build_dataset(self):
         raise NotImplementedError
 
 
 class IrisCubeDataset(_Dataset):
+    """
+    Convert data queried from an EDR Server to an Iris Cube object
+    for further processing.
+
+    """
     def __init__(self, data_handler, names):
+        """
+        Construct a Cube dataset construction instance.
+
+        Args:
+          * `data_handler`: an instance of `.data.DataHandler` containing the data
+            to be converted.
+          * `names`: a dict `{key_name: friendly_name}` of names that describe the data.
+
+        """
         super().__init__(data_handler, names)
         self._key_name, = list(self.names.keys())
         self._friendly_name, = list(self.names.values())
 
     def _handle_time_coord(self, values):
+        """
+        Implement specific processing needs for handling a time coordinate
+        returned by the EDR Server. There are two main needs:
+          * Construct a time unit (as a `cf_units.Unit` object) given only a calendar
+            from the EDR Server response.
+          * Convert the ISO DateTime strings from the EDR Server response to
+            time coordinate point values using the time unit.
+
+        """
         epoch = "days since 1970-01-01"
         calendar = self.data_handler.trs.lower()
         unit = Unit(epoch, calendar=calendar)
@@ -46,7 +63,8 @@ class IrisCubeDataset(_Dataset):
         points = [unit.date2num(dt) for dt in dts]
         return unit, points
 
-    def build_coord(self, axis_name):
+    def _build_coord(self, axis_name):
+        """Build a coordinate for the axis specified by `axis_name`."""
         values = self.data_handler.coords[axis_name]
 
         if axis_name in HORIZONTAL_AXES_LOOKUP.keys():
@@ -73,13 +91,20 @@ class IrisCubeDataset(_Dataset):
         return coord
 
     def build_dataset(self):
+        """
+        Build an Iris Cube object from the data provided.
+
+        Returns:
+          * an `Iris.cube.Cube` instance.
+
+        """
         axes = sorted(
             self.data_handler.coords.keys(),
             key=lambda i: AXES_ORDER.index(i)
         )
         dcad = []
         for i, axis in enumerate(axes):
-            coord = self.build_coord(axis)
+            coord = self._build_coord(axis)
             dcad.append((coord, i))
 
         cube = Cube(
@@ -92,10 +117,31 @@ class IrisCubeDataset(_Dataset):
 
 
 class IrisCubeListDataset(_Dataset):
+    """
+    Convert data queried from an EDR Server to an Iris CubeList object
+    for further processing.
+
+    """
     def __init__(self, data_handler, names):
+        """
+        Construct a CubeList dataset construction instance.
+
+        Args:
+          * `data_handler`: an instance of `.data.DataHandler` containing the data
+            to be converted.
+          * `names`: a dict `{key_name: friendly_name, ...}` of names that describe the data.
+
+        """
         super().__init__(data_handler, names)
 
     def build_dataset(self):
+        """
+        Build an Iris CubeList object from the data provided.
+
+        Returns:
+          * an `Iris.cube.CubeList` instance.
+
+        """
         cubes = []
         for k, v in self.names.items():
             cube = IrisCubeDataset(self.data_handler, {k: v}).build_dataset()
@@ -104,6 +150,13 @@ class IrisCubeListDataset(_Dataset):
 
 
 def make_dataset(data_handler, names, to="iris"):
+    """
+    Construct a dataset from data returned by the EDR Server by selecting the most
+    appropriate dataset producer given the common query parameters.
+
+    Note: currently on Iris datasets (`Cube` and `CubeList`) are supported.
+
+    """
     valid_handers = ["iris"]
     if to not in valid_handers:
         emsg = f"`to` must be one of: {','.join(valid_handers)!r}; got {to}."
