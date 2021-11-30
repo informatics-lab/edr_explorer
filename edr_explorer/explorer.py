@@ -373,7 +373,7 @@ class EDRExplorer(param.Parameterized):
         showable = tiles
         if self._data_key != "":
             dataset = self.edr_interface.data_handler[self._data_key]
-            opts = {"cmap": self.cmap, "alpha": self.alpha}
+            opts = {"cmap": self.cmap, "alpha": self.alpha, "colorbar": True}
 
             colours = self.edr_interface.data_handler.get_colours(self.pc_params.value)
             if colours is not None:
