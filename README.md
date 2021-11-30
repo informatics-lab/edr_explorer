@@ -37,6 +37,17 @@ This can be used either in a notebook or in a Python script that can be served b
 panel serve --show run.py
 ```
 
+### Accessing the data
+
+You can request all the data described by ... from the EDR Server by clicking the `Get Dataset` button in the explorer interface. This will make the data represented by the current state of the select widgets in the explorer interface available in a common Python data format appropriate
+for the type of data. Note that currently the only formats supported for this are Iris `Cube` and `CubeList` objects.
+
+To access the data:
+
+```python
+explorer.dataset
+```
+
 ### Tips and tricks
 
 #### Plot options

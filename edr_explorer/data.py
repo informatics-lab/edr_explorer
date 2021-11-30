@@ -1,9 +1,10 @@
-import numpy as np
+from itertools import product as iproduct
 
 from geoviews import Dataset as GVDataset
 from holoviews import Dataset as HVDataset
+import numpy as np
 
-from .lookup import CRS_LOOKUP, TRS_LOOKUP
+from .lookup import AXES_ORDER, CRS_LOOKUP, TRS_LOOKUP
 from .util import dict_list_search, get_request
 
 
@@ -28,12 +29,19 @@ class DataHandler(object):
         self.colours = {}
 
         self._errors = None
+        self._param_names = None
         self._coords = None
+        self._units = None
+        self.shape = None
+        self._selection_axes = None
+        self._all_query_keys = None
+        self._all_data = None
         self._crs = None
         self._trs = None
 
     @property
     def errors(self):
+        """Capture any errors generated when making a request to the EDR Server."""
         return self._errors
 
     @errors.setter
@@ -41,7 +49,19 @@ class DataHandler(object):
         self._errors = value
 
     @property
+    def param_names(self):
+        """List of all parameter names present in `self.data_json`."""
+        if self._param_names is None:
+            self.param_names = list(self.data_json["parameters"].keys())
+        return self._param_names
+
+    @param_names.setter
+    def param_names(self, value):
+        self._param_names = value
+
+    @property
     def coords(self):
+        """Dict {"axis_name": points_array} of all coords present in `self.data_json`."""
         if self._coords is None:
             self._build_coords()
         return self._coords
@@ -51,7 +71,77 @@ class DataHandler(object):
         self._coords = value
 
     @property
+    def units(self):
+        """A dictionary mapping parameter names to their unit strings."""
+        if self._units is None:
+            self.units = self._get_units()
+        return self._units
+
+    @units.setter
+    def units(self, value):
+        self._units = value
+
+    @property
+    def shape(self):
+        if self._shape is None:
+            self.shape = self._get_shape()
+        return self._shape
+
+    @shape.setter
+    def shape(self, value):
+        self._shape = value
+
+    @property
+    def selection_axes(self):
+        """
+        List of all axis names present in `self.data_json` for which
+        a data array can be selected.
+
+        Functionally this is equivalent to all non-horizontal axis names.
+
+        """
+        if self._selection_axes is None:
+            axes_names = list(self.coords.keys())
+            self.selection_axes = list(set(axes_names) - set(self.horizontal_axes_names))
+        return self._selection_axes
+
+    @selection_axes.setter
+    def selection_axes(self, value):
+        self._selection_axes = value
+
+    @property
+    def all_query_keys(self):
+        """
+        A list of all possible valid query keys that could be passed to `self.get_item`
+        and thus return a valid data response from the EDR Server.
+
+        """
+        if self._all_query_keys is None:
+            self.all_query_keys = self.get_combinations()
+        return self._all_query_keys
+
+    @all_query_keys.setter
+    def all_query_keys(self, value):
+        self._all_query_keys = value
+
+    @property
+    def all_data(self):
+        """
+        A dict of NumPy arrays of all data values for all combinations of parameter names
+        and selection coordinate points present in `self.data_json`.
+
+        """
+        if self._all_data is None:
+            self.all_data = self.get_all_data()
+        return self._all_data
+
+    @all_data.setter
+    def all_data(self, value):
+        self._all_data = value
+
+    @property
     def crs(self):
+        """Common coordinate reference system (crs) for all data represented by `self.data_json`."""
         if self._crs is None:
             self._get_data_crs()
         return self._crs
@@ -60,10 +150,21 @@ class DataHandler(object):
     def crs(self, value):
         self._crs = value
 
+    @property
+    def trs(self):
+        """Common time-coord reference system (trs) for all data represented by `self.data_json`."""
+        if self._trs is None:
+            self._get_data_trs()
+        return self._trs
+
+    @trs.setter
+    def trs(self, value):
+        self._trs = value
+
     def __getitem__(self, key):
         if not isinstance(key, str):
             emsg = "Key must be a string defining data parameter name and coord values."
-            ehelp = f"`Generate a key using {self.__class__.__name__}.make_key()`."
+            ehelp = f"Generate a key using {self.__class__.__name__}.make_key()."
             raise KeyError(f"{emsg}\n{ehelp}")
         param, coords_dict = self.from_key(key)
         return self.get_item(param, coords_dict)
@@ -104,6 +205,13 @@ class DataHandler(object):
             coords[axis_name] = coord_points
         self.coords = coords
 
+    def _get_units(self):
+        units_dict = {}
+        for name in self.param_names:
+            unit_string = self.data_json["parameters"][name]["unit"]["symbol"]["value"]
+            units_dict[name] = unit_string
+        return units_dict
+
     def _get_data_crs(self):
         """Retrieve the horizontal coordinate reference system from `data_json`."""
         ref_systems = self.data_json["domain"]["referencing"]
@@ -113,13 +221,20 @@ class DataHandler(object):
         crs_type = ref["system"]["type"]
         self.crs = CRS_LOOKUP[crs_type]
 
+    def _get_data_trs(self):
+        """Retrieve the time coordinate reference system from `data_json`."""
+        ref_systems = self.data_json["domain"]["referencing"]
+        ref = dict_list_search(ref_systems, "coordinates", ["t"])
+        trs_type = ref["system"]["calendar"]
+        self.trs = TRS_LOOKUP[trs_type]
+
     def _build_geoviews(self, array, param_name):
         """Construct a GeoViews Dataset object from an nD array data response."""
         colours = self.get_colours(param_name)
         if colours is not None:
-            data = np.ma.masked_less(array[0], colours["vmin"])
+            data = np.ma.masked_less(array, colours["vmin"])
         else:
-            data = np.ma.masked_invalid(array[0])
+            data = np.ma.masked_invalid(array)
         ds = HVDataset(
             data=(self.coords["y"], self.coords["x"], data),
             kdims=["latitude", "longitude"],
@@ -142,11 +257,12 @@ class DataHandler(object):
         url = url_template.format(**template_dict)
         r, status_code, errors = get_request(url)
 
-        data = None
+        array = None
         if r is not None:
             if param_type == "TiledNdArray":
-                array = np.array(r["values"], dtype=r['dataType']).reshape(r["shape"])
-                data = self._build_geoviews(array, param)
+                shape = [s for s in r["shape"] if s != 1]  # Don't make length-1 dims.
+                array = np.array(r["values"], dtype=r['dataType']).reshape(shape)
+                # data = self._build_geoviews(array, param)
             else:
                 raise NotImplementedError(f"Cannot process parameter type {param_type!r}")
         if errors is not None:
@@ -154,9 +270,9 @@ class DataHandler(object):
             if status_code is not None:
                 emsg += f" ({status_code})"
             self.errors = emsg
-        return data
+        return array
 
-    def get_item(self, param, coords_dict):
+    def get_item(self, param, coords_dict, dataset=True):
         """Get a single dataset from the data cache, or populate it into the cache if not present."""
         key = self.make_key(param, coords_dict)
         if self.cache.get(key) is not None:
@@ -164,6 +280,8 @@ class DataHandler(object):
         else:
             result = self._request_data(param, coords_dict)
             self.cache[key] = result
+        if dataset:
+            result = self._build_geoviews(result, param)
         return result
 
     def get_colours(self, param_name):
@@ -215,24 +333,73 @@ class DataHandler(object):
             }
         return result
 
-    # def _prepare_json(self):
-    #     param_names = list(self.data_json["parameters"].keys())
-    #     all_coords = list(self.data_json["domain"]["axes"].keys())
-    #     template_coords = set(all_coords) - set(self.horizontal_coords)
-    #     coords = {}
-    #     for coord in template_coords:
-    #         coord_data = self.data_json["domain"]["axes"][coord]
-    #         keys = list(coord_data.keys())
-    #         if "start" in keys:
-    #             coord_points = list(
-    #                 np.linspace(coord_data["start"],
-    #                             coord_data["stop"],
-    #                             coord_data["num"]
-    #                 )
-    #             )
-    #         elif "values" in keys:
-    #             coord_points = list(coord_data["values"])
-    #         else:
-    #             bad_keys = ", ".join(keys)
-    #             raise KeyError(f"Could not build coordinate from keys: {bad_keys!r}.")
-    #         coords[coord] = coord_points
+    def _get_shape(self):
+        axes = sorted(
+            self.coords.keys(),
+            key=lambda i: AXES_ORDER.index(i)
+        )
+        return [len(self.coords[axis]) for axis in axes]
+
+    def build_data_array(self, param_name):
+        axis_names = self.data_json["ranges"][param_name]["axisNames"]
+        relevant_queries = filter(
+            lambda q: q[0] == param_name,
+            self.all_query_keys
+        )
+        template_array = np.empty(self.shape)
+        for query in relevant_queries:
+            param, coords_dict = query
+            array = self.get_item(param, coords_dict, dataset=False)
+
+            axes = list(coords_dict.keys())
+            insertion_inds = [slice(None)] * len(axis_names)
+            for axis in axes:
+                data_val = (coords_dict[axis])
+                data_idx = self.coords[axis].index(data_val)
+                insert_idx = axis_names.index(axis)
+                slc = slice(data_idx, data_idx+1)
+                insertion_inds[insert_idx] = slc
+            template_array[tuple(insertion_inds)] = array
+        return template_array
+
+    def get_all_data(self):
+        """
+        Build the full data array across all selection coord points for
+        all parameter names.
+
+        """
+        params_and_data = {}
+        for param_name in self.param_names:
+            data = self.build_data_array(param_name)
+            params_and_data[param_name] = data
+        return params_and_data
+
+    def get_combinations(self):
+        """
+        Return a list of all possible combinations of keys for requesting
+        data values from the EDR Server based on the list of parameter names
+        and selection axes present in `self.data_json`.
+
+        """
+        # Construct a dict of all selection axes and their coord values lists.
+        # e.g. - {"t": [1, 2], "z": [2, 10]}
+        coords_values = {axis: self.coords[axis] for axis in self.selection_axes}
+
+        # Split `coords_values` into lists of {axis: point} dicts.
+        # e.g. - [[{"t": 1}, {"t", 2}], [{"z": 2}, {"z": 10}]]
+        selection_coords_keys = []
+        for axis, points in coords_values.items():
+            pairwise = [{axis: i} for i in points]
+            selection_coords_keys.append(pairwise)
+
+        # Combine all combinations of {axis: point} dicts per axis to construct
+        # every possible `coord_dict` combination for a __getitem__ request.
+        # e.g. [{"t": 1, "z": 2}, {"t": 1, "z": 10}, {"t": 2, "z": 2}, {"t": 2, "z": 10}]
+        all_coord_dicts = map(
+            lambda d: {k: v for itm in d for k, v in itm.items()},
+            iproduct(*selection_coords_keys)
+        )
+
+        # Finally combine all_coord_dicts with the list of parameter names.
+        # e.g. [("name", {"t": 1, "z": 2}), ("name", {"t": 1, "z": 10}), ...]
+        return iproduct(self.param_names, all_coord_dicts)

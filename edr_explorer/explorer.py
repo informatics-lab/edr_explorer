@@ -38,8 +38,16 @@ class EDRExplorer(param.Parameterized):
     cmap = param.String("viridis")
     alpha = param.Magnitude(0.85)
 
+    # Buttons.
     connect_button = widgets.Button(description="Connect")
     submit_button = widgets.Button(description="Submit", disabled=True)
+    dataset_button = widgets.Button(
+        description="Get Dataset",
+        disabled=True,
+        layout=widgets.Layout(top="-0.5rem")
+    )
+
+    # Lists and boxes aggregating multiple widgets.
     wlist = [coll, locations, datasets, start_time, end_time]  # Metadata widgets.
     pwlist = [pc_times, pc_params]  # Plot widgets.
     pchecklist = [use_colours, use_levels]
@@ -63,10 +71,16 @@ class EDRExplorer(param.Parameterized):
 
         super().__init__()
 
+        # Class properties.
         self._edr_interface = None
+        self._dataset = None
 
+        # Button click bindings.
         self.connect_button.on_click(self._load_collections)
         self.submit_button.on_click(self._request_plot_data)
+        self.dataset_button.on_click(self._get_dataset)
+
+        # Watches on widgets.
         self.coll.observe(self._populate_contents_callback, names='value')
         self.start_time.observe(self._filter_end_time, names='value')
         self.pc_times.observe(self._plot_change, names='value')
@@ -85,6 +99,19 @@ class EDRExplorer(param.Parameterized):
         self._edr_interface = value
 
     @property
+    def dataset(self):
+        """
+        A well-known Python data object containing all the data represented by the current state
+        of select widgets on the dashboard.
+
+        """
+        return self._dataset
+
+    @dataset.setter
+    def dataset(self, value):
+        self._dataset = value
+
+    @property
     def layout(self):
         """
         Construct a layout of `Panel` objects to produce the EDR explorer dashboard.
@@ -99,18 +126,20 @@ class EDRExplorer(param.Parameterized):
             EDR Server via the `.interface.EDRInterface` instance
 
         There are some extra elements too:
-          * the widgets column on the left contains two buttons - one to connect to the server
-            at the web address specified in the `Server` text field widget; and one to submit a
-            query to the EDR Server via the `.interface.EDRInterface` instance based on the values
-            set in the selector widgets
+          * the widgets column on the left contains three buttons:
+              * one to connect to the server at the URI specified in the `Server` text field widget,
+              * one to submit a query to the EDR Server via the `.interface.EDRInterface` instance
+                based on the values set in the selector widgets, and
+              * one to request and return to the user all the data referenced by the current state
+                of the dashboard's select widgets as a well-known Python data object (such as an Iris cube).
           * the widgets column on the left also contains two fields for displaying error messages
             when connecting to or retrieving data from the EDR Server. These are hidden by
             default and are made visible when there is a relevant error message to display. Once
             the error has been resolved the field will become hidden again.
           * the plot area on the right contains two plot control widgets to select specific data
-            from queries submitted to the EDR Server to show on the plot
+            from queries submitted to the EDR Server to show on the plot.
           * the plot areas on the right also contains two checkboxes to select whether or not to
-            show data on the plot rendered using colours and levels supplied in the query response
+            show data on the plot rendered using colours and levels supplied in the query response.
 
         """
         connect_row = pn.Row(
@@ -118,7 +147,8 @@ class EDRExplorer(param.Parameterized):
             self.connect_button
         )
         control_widgets = pn.Column(self.wbox, self.data_error_box)
-        control_row = pn.Row(control_widgets, self.submit_button, align=("end", "start"))
+        buttons = pn.Column(self.submit_button, self.dataset_button)
+        control_row = pn.Row(control_widgets, buttons, align=("end", "start"))
         plot_col = pn.Column(self.plot, self.pwbox)
         control_col = pn.Column(connect_row, control_row)
         return pn.Row(control_col, plot_col).servable()
@@ -191,6 +221,7 @@ class EDRExplorer(param.Parameterized):
             box.value = False
             box.disabled = True
         self.submit_button.disabled = True
+        self.dataset_button.disabled = True
         self._populate_error_box("connect_error_box", "")
         self._populate_error_box("data_error_box", "")
 
@@ -221,6 +252,7 @@ class EDRExplorer(param.Parameterized):
         """Enable plot control widgets for updating the specific data shown on the plot."""
         for widget in self.pwlist:
             widget.disabled = False
+        self.dataset_button.disabled = False
         self._check_enable_checkboxes()
 
     def _populate_contents_callback(self, change):
@@ -263,6 +295,26 @@ class EDRExplorer(param.Parameterized):
             times = self.start_time.options
             sel_idx = times.index(start_time_selected)
             self.end_time.options = times[sel_idx:]
+
+    def _get_dataset(self, _):
+        """
+        Callback when the `get dataset` button is clicked.
+
+        Request from the EDR Server all data represented by the current states of
+        the select widgets and provide this data as a well-known Python data
+        object (such as an Iris Cube).
+
+        """
+        # XXX somewhere we should check if the server supports `Cube` queries,
+        #     and preferentially use that if available.
+        from .dataset import make_dataset
+
+        collection_id = self.coll.value
+        params = self.edr_interface.get_collection_parameters(collection_id)
+        keys = self.datasets.value
+        names_dict = {k: v["label"] for k, v in params.items() if k in keys}
+        dataset = make_dataset(self.edr_interface.data_handler, names_dict)
+        self.dataset = dataset
 
     def _request_plot_data(self, _):
         """
