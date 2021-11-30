@@ -20,7 +20,7 @@ EDR Explorer is dependent on the following Python packages:
 
 ## Using it
 
-The explorer interface is produced as a Panel application, and intended for use either in a Jupyter notebook or as a standalone Panel application. In the future we hope to add a commandline-based interface as well.
+The explorer interface is provided as a Panel dashboard, and intended for use either in a Jupyter notebook or as a standalone Panel application. In the future we hope to add a commandline-based interface as well.
 
 To set up an explorer interface:
 
@@ -39,7 +39,7 @@ panel serve --show run.py
 
 ### Accessing the data
 
-You can request all the data described by ... from the EDR Server by clicking the `Get Dataset` button in the explorer interface. This will make the data represented by the current state of the select widgets in the explorer interface available in a common Python data format appropriate
+You can request all the data described by ... from the EDR Server by clicking the `Get Dataset` button in the dashboard. This will make the data represented by the current state of the select widgets in the dashboard available in a common Python data format appropriate
 for the type of data. Note that currently the only formats supported for this are Iris `Cube` and `CubeList` objects.
 
 To access the data:
@@ -52,21 +52,21 @@ explorer.dataset
 
 #### Plot options
 
-The explorer interface sets a limited number of options for plotting the selected data, specifically the colormap of the plotted data and its alpha (transparency). The values for these options are publically accessible, and can be customised for a specifed interface instance as follows:
+The dashboard sets a limited number of options for plotting the selected data, specifically the colormap of the plotted data and its alpha (transparency). The values for these options are publically accessible, and can be customised for a specifed interface instance as follows:
 
 ```python
 explorer.cmap = "inferno"
 explorer.alpha = 0.75
 ```
 
-This assumes that you have set up an explorer interface called `explorer` as per the Python code above. The colormap can be set as any valid reference to a colormap from [matplotlib](https://matplotlib.org/stable/gallery/color/colormap_reference.html) or [colorcet](https://colorcet.holoviz.org/), including as simple string names of the colormap, as shown here.
+This assumes that you have set up an dashboard called `explorer` as per the Python code above. The colormap can be set as any valid reference to a colormap from [matplotlib](https://matplotlib.org/stable/gallery/color/colormap_reference.html) or [colorcet](https://colorcet.holoviz.org/), including as simple string names of the colormap, as shown here.
 
 #### Pre-populate the EDR Server address
 
-You can also pass the URI for a running EDR Server to the explorer interface when you instantiate it. For example:
+You can also pass the URI for a running EDR Server to the dashboard when you instantiate it. For example:
 
 ```python
 explorer = EDRExplorer("http://localhost:8000")
 ```
 
-This will pre-populate the server location field in the explorer interface.
+This will pre-populate the server location field in the dashboard.
