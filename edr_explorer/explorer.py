@@ -1,4 +1,3 @@
-import cartopy.crs as ccrs
 import ipywidgets as widgets
 
 import geoviews as gv
