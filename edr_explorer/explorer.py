@@ -74,6 +74,9 @@ class EDRExplorer(param.Parameterized):
         self._edr_interface = None
         self._dataset = None
 
+        # Plot.
+        self.plot = gv.DynamicMap(pn.bind(self.make_plot, self._data_key))
+
         # Button click bindings.
         self.connect_button.on_click(self._load_collections)
         self.submit_button.on_click(self._request_plot_data)
@@ -152,7 +155,8 @@ class EDRExplorer(param.Parameterized):
 
         tiles = gv.tile_sources.Wikipedia.opts(width=800, height=600)
         # plot = tiles * gv.DynamicMap(pn.bind(self.plot, self._data_key))
-        plot = tiles * gv.DynamicMap(self.plot)
+        # plot = tiles * gv.DynamicMap(self.plot)
+        plot = tiles * self.plot
         plot_col = pn.Column(plot, self.pwbox)
         return pn.Row(control_col, plot_col).servable()
 
@@ -369,13 +373,14 @@ class EDRExplorer(param.Parameterized):
         # Make sure both widgets are populated.
         if param is not None and t not in (None, ""):
             self._data_key = self.edr_interface.data_handler.make_key(param, {"t": t})
+            print(f"Data key: {self._data_key}")
 
     # @param.depends('_data_key', '_colours', '_levels', 'cmap', 'alpha')
-    def plot(self):
+    def make_plot(self, data_key=""):
         """Show data from a data request to the EDR Server on the plot."""
         print("Redraw...")
-        if self.data_key != "":
-            dataset = self.edr_interface.data_handler[self.data_key]
+        if data_key != "":
+            dataset = self.edr_interface.data_handler[data_key]
             opts = {"cmap": self.cmap, "alpha": self.alpha, "colorbar": True}
 
             colours = self.edr_interface.data_handler.get_colours(self.pc_params.value)
