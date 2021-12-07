@@ -5,6 +5,7 @@ import panel as pn
 import param
 
 from .interface import EDRInterface
+from .lookup import CRS_LOOKUP
 
 
 class EDRExplorer(param.Parameterized):
@@ -75,7 +76,7 @@ class EDRExplorer(param.Parameterized):
         self._dataset = None
 
         # Plot.
-        self.plot = gv.DynamicMap(pn.bind(self.make_plot, self._data_key))
+        self.plot = gv.DynamicMap(self.make_plot)
 
         # Button click bindings.
         self.connect_button.on_click(self._load_collections)
@@ -154,8 +155,6 @@ class EDRExplorer(param.Parameterized):
         control_col = pn.Column(connect_row, control_row)
 
         tiles = gv.tile_sources.Wikipedia.opts(width=800, height=600)
-        # plot = tiles * gv.DynamicMap(pn.bind(self.plot, self._data_key))
-        # plot = tiles * gv.DynamicMap(self.plot)
         plot = tiles * self.plot
         plot_col = pn.Column(plot, self.pwbox)
         return pn.Row(control_col, plot_col).servable()
@@ -375,12 +374,15 @@ class EDRExplorer(param.Parameterized):
             self._data_key = self.edr_interface.data_handler.make_key(param, {"t": t})
             print(f"Data key: {self._data_key}")
 
-    # @param.depends('_data_key', '_colours', '_levels', 'cmap', 'alpha')
-    def make_plot(self, data_key=""):
+    @param.depends('_data_key', '_colours', '_levels', 'cmap', 'alpha')
+    def make_plot(self):
         """Show data from a data request to the EDR Server on the plot."""
-        print("Redraw...")
-        if data_key != "":
-            dataset = self.edr_interface.data_handler[data_key]
+        showable = gv.Image(
+            ([-8, -1], [53, 58], [[0, 0], [0, 0]]),  # Approximate UK extent.
+            crs=CRS_LOOKUP["WGS_1984"],
+        ).opts(alpha=0.0)
+        if self._data_key != "":
+            dataset = self.edr_interface.data_handler[self._data_key]
             opts = {"cmap": self.cmap, "alpha": self.alpha, "colorbar": True}
 
             colours = self.edr_interface.data_handler.get_colours(self.pc_params.value)
@@ -402,13 +404,9 @@ class EDRExplorer(param.Parameterized):
                     error_box,
                     self.edr_interface.data_handler.errors
                 )
-                showable = gv.Image([])
             else:
                 self._populate_error_box(
                     error_box,
                     "Unspecified error (plotting)"
                 )
-                showable = gv.Image([])
-        else:
-            showable = gv.Image([])
         return showable
