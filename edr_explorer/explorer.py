@@ -5,6 +5,7 @@ import panel as pn
 import param
 
 from .interface import EDRInterface
+from .lookup import CRS_LOOKUP
 
 
 class EDRExplorer(param.Parameterized):
@@ -73,6 +74,9 @@ class EDRExplorer(param.Parameterized):
         # Class properties.
         self._edr_interface = None
         self._dataset = None
+
+        # Plot.
+        self.plot = gv.DynamicMap(self.make_plot)
 
         # Button click bindings.
         self.connect_button.on_click(self._load_collections)
@@ -148,8 +152,11 @@ class EDRExplorer(param.Parameterized):
         control_widgets = pn.Column(self.wbox, self.data_error_box)
         buttons = pn.Column(self.submit_button, self.dataset_button)
         control_row = pn.Row(control_widgets, buttons, align=("end", "start"))
-        plot_col = pn.Column(self.plot, self.pwbox)
         control_col = pn.Column(connect_row, control_row)
+
+        tiles = gv.tile_sources.Wikipedia.opts(width=800, height=600)
+        plot = tiles * self.plot
+        plot_col = pn.Column(plot, self.pwbox)
         return pn.Row(control_col, plot_col).servable()
 
     def _populate_error_box(self, error_box_ref, errors):
@@ -365,12 +372,15 @@ class EDRExplorer(param.Parameterized):
         # Make sure both widgets are populated.
         if param is not None and t not in (None, ""):
             self._data_key = self.edr_interface.data_handler.make_key(param, {"t": t})
+            print(f"Data key: {self._data_key}")
 
     @param.depends('_data_key', '_colours', '_levels', 'cmap', 'alpha')
-    def plot(self):
+    def make_plot(self):
         """Show data from a data request to the EDR Server on the plot."""
-        tiles = gv.tile_sources.Wikipedia.opts(width=800, height=600)
-        showable = tiles
+        showable = gv.Image(
+            ([-8, -1], [53, 58], [[0, 0], [0, 0]]),  # Approximate UK extent.
+            crs=CRS_LOOKUP["WGS_1984"],
+        ).opts(alpha=0.0)
         if self._data_key != "":
             dataset = self.edr_interface.data_handler[self._data_key]
             opts = {"cmap": self.cmap, "alpha": self.alpha, "colorbar": True}
@@ -388,10 +398,7 @@ class EDRExplorer(param.Parameterized):
                 # Independent check to see if we can clear the data error box.
                 self._populate_error_box(error_box, "")
             if dataset is not None and self.edr_interface.data_handler.errors is None:
-                showable = tiles * dataset.to(
-                    gv.Image,
-                    ['longitude', 'latitude']
-                ).opts(**opts)
+                showable = dataset.to(gv.Image, ['longitude', 'latitude']).opts(**opts)
             elif self.edr_interface.data_handler.errors is not None:
                 self._populate_error_box(
                     error_box,
