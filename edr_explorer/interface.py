@@ -194,6 +194,12 @@ class EDRInterface(object):
         proj = CRS_LOOKUP[proj_name]
         return bbox, proj
 
+    def has_temporal_extent(self, keys):
+        """Determine whether a collection described by `keys` has a temporal extent section."""
+        coll = self.get_collection(keys)
+        extent = coll["extent"].get("temporal")
+        return extent is not None
+
     def get_temporal_extent(self, keys):
         """
         Return the time coordinate points and temporal reference system that
@@ -214,6 +220,30 @@ class EDRInterface(object):
             trs_name = "Gregorian"
         trs_ref = TRS_LOOKUP[trs_name]
         return time_strings, trs_ref
+
+    def has_vertical_extent(self, keys):
+        """Determine whether a collection described by `keys` has a vertical extent section."""
+        coll = self.get_collection(keys)
+        extent = coll["extent"].get("vertical")
+        return extent is not None
+
+    # def get_vertical_extent(self, keys):
+    #     """
+    #     Return the vertical coordinate points and vertical reference system that
+    #     describes a collection defined by `keys`.
+
+    #     """
+    #     coll = self.get_collection(keys)
+    #     times = coll["extent"]["temporal"]
+    #     t_keys = times.keys()
+    #     t_ref_sys_keyname = "trs"
+    #     t_desc_key, = list(set(list(t_keys)) - set([t_ref_sys_keyname]))
+    #     time_strings = times[t_desc_key]
+    #     trs = times[t_ref_sys_keyname]
+    #     trs_re = re.search(r"TDATUM\[\"(?P<trsref>[\w ]+)", trs)
+    #     trs_name = trs_re.group("trsref")
+    #     trs_ref = TRS_LOOKUP[trs_name]
+    #     return time_strings, trs_ref
 
     def get_query_types(self, keys):
         """Return a list of the query types supported against a collection defined by `keys`."""

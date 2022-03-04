@@ -37,6 +37,7 @@ class DataHandler(object):
         self._all_query_keys = None
         self._all_data = None
         self._crs = None
+        self._vrs = None
         self._trs = None
 
     @property

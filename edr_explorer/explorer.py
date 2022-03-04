@@ -74,6 +74,8 @@ class EDRExplorer(param.Parameterized):
         # Class properties.
         self._edr_interface = None
         self._dataset = None
+        self._no_t = "No t values in collection"
+        self._no_z = "No z values in collection"
 
         # Plot.
         self.plot = gv.DynamicMap(self.make_plot)
@@ -272,7 +274,10 @@ class EDRExplorer(param.Parameterized):
             self._populate_params(collection_id)
             locs = self.edr_interface.get_locations(collection_id)
             self.locations.options = locs
-            times, _ = self.edr_interface.get_temporal_extent(collection_id)
+            if self.edr_interface.has_temporal_extent(collection_id):
+                times, _ = self.edr_interface.get_temporal_extent(collection_id)
+            else:
+                times = self._no_t
             self.start_time.options = times
             self.end_time.options = times
 
@@ -368,10 +373,20 @@ class EDRExplorer(param.Parameterized):
         """
         param = self.pc_params.value
         t = self.pc_times.value
+        z = None
+        can_request_data = False
         self._check_enable_checkboxes()
-        # Make sure both widgets are populated.
-        if param is not None and t not in (None, ""):
-            self._data_key = self.edr_interface.data_handler.make_key(param, {"t": t})
+
+        value_dict = {}
+        if t not in (None, "", self._no_t):
+            value_dict.update({"t": t})
+            can_request_data = True
+        if z not in (None, "", self._no_t):
+            value_dict.update({"z": z})
+            can_request_data = True
+
+        if param is not None and can_request_data:
+            self._data_key = self.edr_interface.data_handler.make_key(param, value_dict)
             print(f"Data key: {self._data_key}")
 
     @param.depends('_data_key', '_colours', '_levels', 'cmap', 'alpha')
