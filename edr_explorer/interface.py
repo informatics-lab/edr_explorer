@@ -116,6 +116,24 @@ class EDRInterface(object):
         named_query_uri = locs_query_uri.replace("name", coll["id"])
         return self._get_covjson(named_query_uri, full_uri=True)
 
+    def _handle_label(self, label_item):
+        """
+        Labels in EDR can either be provided directly, or in a dict with one or more
+        locales; respectively:
+          * "label": "my_label", or
+          * "label": {"en": "my_label", ...}
+
+        This helper handles either provision, and returns the locale-specific
+        label, if provided by the server.
+
+        """
+        locale = "en"  # This could be set globally in future.
+        try:
+            label = label_item.get(locale)
+        except AttributeError:
+            label = label_item
+        return label
+
     def get_collection(self, keys):
         """
         Get the JSON metadata of a specific collection in the list of collections
@@ -184,13 +202,16 @@ class EDRInterface(object):
         """
         coll = self.get_collection(keys)
         times = coll["extent"]["temporal"]
-        t_keys = times.keys()
         t_ref_sys_keyname = "trs"
-        t_desc_key, = list(set(list(t_keys)) - set([t_ref_sys_keyname]))
-        time_strings = times[t_desc_key]
+        t_desc_keys = ["interval", "values"]
+        time_strings = times[t_desc_keys[1]]  # Presume we'll have explicit values.
         trs = times[t_ref_sys_keyname]
         trs_re = re.search(r"TDATUM\[\"(?P<trsref>[\w ]+)", trs)
-        trs_name = trs_re.group("trsref")
+        if trs_re is not None:
+            trs_name = trs_re.group("trsref")
+        else:
+            # A risky temporary fallback. It would be better to properly parse the WKT.
+            trs_name = "Gregorian"
         trs_ref = TRS_LOOKUP[trs_name]
         return time_strings, trs_ref
 
@@ -208,9 +229,10 @@ class EDRInterface(object):
         coll = self.get_collection(keys)
         params_dict = {}
         for param_id, param_desc in coll["parameter_names"].items():
-            en_label = param_desc["observedProperty"]["label"]["en"]
+            label_provider = param_desc["observedProperty"]["label"]
+            label = self._handle_label(label_provider)
             units = param_desc["unit"]["symbol"]["value"]
-            params_dict[param_id] = {"label": en_label, "units": units}
+            params_dict[param_id] = {"label": label, "units": units}
         return params_dict
 
     def query_position(self):
