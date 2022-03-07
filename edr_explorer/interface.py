@@ -15,7 +15,6 @@ class EDRInterface(object):
     """
 
     _collections_query_str = "collections/?f=json"
-    # _locs_query_str = "collections/{coll_id}/locations/{loc_id}?parameter-name={param_names}&datetime={dt_str}"
     _locs_query_str = "collections/{coll_id}/locations/{loc_id}?{query_str}"
     _generic_query_str = "collections/{coll_id}/{query_type}?{query_str}"
 
