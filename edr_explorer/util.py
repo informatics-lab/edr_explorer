@@ -14,8 +14,11 @@ def get_request(uri):
     except Exception as e:
         errors = e.__class__.__name__
     else:
-        status_code = r.status_code
         response = r.json()
+        status_code = r.status_code
+        if "code" in response.keys() and "message" in response.keys():
+            status_code = response["code"]
+            errors = response["message"]
     return response, status_code, errors
 
 

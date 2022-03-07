@@ -45,6 +45,11 @@ CRS_LOOKUP = {
 }
 
 
+VRS_LOOKUP = {
+    "VerticalRS": "height",
+}
+
+
 TRS_LOOKUP = {
     "Gregorian Calendar": "gregorian",
     "Gregorian": "gregorian",

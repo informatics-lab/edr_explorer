@@ -15,7 +15,8 @@ class EDRInterface(object):
     """
 
     _collections_query_str = "collections/?f=json"
-    _locs_query_str = "collections/{coll_id}/locations/{loc_id}?parameter-name={param_names}&datetime={dt_str}"
+    # _locs_query_str = "collections/{coll_id}/locations/{loc_id}?parameter-name={param_names}&datetime={dt_str}"
+    _locs_query_str = "collections/{coll_id}/locations/{loc_id}?{query_str}"
     _generic_query_str = "collections/{coll_id}/{query_type}?{query_str}"
 
     def __init__(self, server_host):
@@ -227,23 +228,23 @@ class EDRInterface(object):
         extent = coll["extent"].get("vertical")
         return extent is not None
 
-    # def get_vertical_extent(self, keys):
-    #     """
-    #     Return the vertical coordinate points and vertical reference system that
-    #     describes a collection defined by `keys`.
+    def get_vertical_extent(self, keys):
+        """
+        Return the vertical coordinate points and vertical reference system that
+        describes a collection defined by `keys`.
 
-    #     """
-    #     coll = self.get_collection(keys)
-    #     times = coll["extent"]["temporal"]
-    #     t_keys = times.keys()
-    #     t_ref_sys_keyname = "trs"
-    #     t_desc_key, = list(set(list(t_keys)) - set([t_ref_sys_keyname]))
-    #     time_strings = times[t_desc_key]
-    #     trs = times[t_ref_sys_keyname]
-    #     trs_re = re.search(r"TDATUM\[\"(?P<trsref>[\w ]+)", trs)
-    #     trs_name = trs_re.group("trsref")
-    #     trs_ref = TRS_LOOKUP[trs_name]
-    #     return time_strings, trs_ref
+        """
+        coll = self.get_collection(keys)
+        vertical = coll["extent"]["vertical"]
+        z_desc_keys = ["interval", "values"]
+        z_values = vertical[z_desc_keys[1]]  # Presume we'll have explicit values.
+        vrs = vertical["vrs"]
+        # XXX replace this with proper WKT parsing. For now, just return the VRS.
+        # trs_re = re.search(r"TDATUM\[\"(?P<trsref>[\w ]+)", trs)
+        # trs_name = trs_re.group("trsref")
+        # trs_ref = TRS_LOOKUP[trs_name]
+        vrs_ref = vrs
+        return z_values, vrs_ref
 
     def get_query_types(self, keys):
         """Return a list of the query types supported against a collection defined by `keys`."""
@@ -275,7 +276,7 @@ class EDRInterface(object):
         """
         raise NotImplemented
 
-    def query_locations(self, coll_id, location, param_names, start_date, end_date):
+    def query_locations(self, coll_id, location, param_names, dates=None, zs=None):
         """
         Request data values and coordinate point arrays for a specific dataset provided
         by the EDR Server. A `location` request is one of the specifically defined query
@@ -287,9 +288,8 @@ class EDRInterface(object):
           * `coll_id` is an identifier for a collection
           * `location` is an identifier for the location for which the data is provided
           * `param_names` is a list of one or more datasets for which to retrieve data
-          * `start_date` and `end_date` describe the temporal extent over which to retrieve data
-          * `query_type` defines the type of query to submit. It must be a query type supported by
-            the collection.
+          * `dates`; `(start_date`, `end_date`) describe the temporal extent over which to retrieve data
+          * `zs`; `(start_z`, `end_z`) describe the vertical extent over which to retrieve data
 
         One principle of EDR is to serve as little data as possible per query. Thus a data request
         returns JSON describing coordinate arrays and an EDR Server location to hit for each dataset
@@ -308,17 +308,21 @@ class EDRInterface(object):
         available_query_types = self.get_query_types(coll_id)
         assert query_type in available_query_types, f"Query type {query_type!r} not supported by server."
 
-        date_query_value = f"{start_date}/{end_date}"
         if not isinstance(param_names, str):
             param_names = ",".join(param_names)
 
-        query_str = self._locs_query_str.format(
+        query_str = f"parameter-name={param_names}"
+        if dates is not None:
+            query_str += f"&datetime={'/'.join(dates)}"
+        if zs is not None:
+            query_str += f"&z={'/'.join([str(z) for z in zs])}"
+
+        request_str = self._locs_query_str.format(
             coll_id=coll["id"],
             loc_id=location,
-            param_names=param_names,
-            dt_str=date_query_value
+            query_str=query_str
         )
-        data_json = self._get_covjson(query_str)
+        data_json = self._get_covjson(request_str)
         self.data_handler = DataHandler(data_json)
 
     def query_items(self):
