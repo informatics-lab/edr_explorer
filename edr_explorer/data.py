@@ -4,7 +4,7 @@ from geoviews import Dataset as GVDataset
 from holoviews import Dataset as HVDataset
 import numpy as np
 
-from .lookup import AXES_ORDER, CRS_LOOKUP, TRS_LOOKUP
+from .lookup import AXES_ORDER, CRS_LOOKUP, TRS_LOOKUP, VRS_LOOKUP
 from .util import dict_list_search, get_request
 
 
@@ -37,6 +37,7 @@ class DataHandler(object):
         self._all_query_keys = None
         self._all_data = None
         self._crs = None
+        self._vrs = None
         self._trs = None
 
     @property
@@ -151,6 +152,17 @@ class DataHandler(object):
         self._crs = value
 
     @property
+    def vrs(self):
+        """Common vertical reference system (vrs) for all data represented by `self.data_json`."""
+        if self._vrs is None:
+            self._get_data_vrs()
+        return self._vrs
+
+    @vrs.setter
+    def vrs(self, value):
+        self._vrs = value
+
+    @property
     def trs(self):
         """Common time-coord reference system (trs) for all data represented by `self.data_json`."""
         if self._trs is None:
@@ -221,6 +233,13 @@ class DataHandler(object):
         crs_type = ref["system"]["type"]
         self.crs = CRS_LOOKUP[crs_type]
 
+    def _get_data_vrs(self):
+        """Retrieve the vertical coordinate reference system from `data_json`."""
+        ref_systems = self.data_json["domain"]["referencing"]
+        ref = dict_list_search(ref_systems, "coordinates", ["z"])
+        vrs_type = ref["system"]["type"]
+        self.vrs = VRS_LOOKUP[vrs_type]
+
     def _get_data_trs(self):
         """Retrieve the time coordinate reference system from `data_json`."""
         ref_systems = self.data_json["domain"]["referencing"]
@@ -252,7 +271,11 @@ class DataHandler(object):
         param_info = self.data_json["ranges"][param]
         param_type = param_info["type"]
 
-        template_dict = {k: self.coords[k].index(v) for k, v in coords_dict.items()}
+        template_dict = {}
+        for k, v in coords_dict.items():
+            # Cast the incoming value to the type of the items in the relevant coord array.
+            target_v_type = type(self.coords[k][0])
+            template_dict[k] = self.coords[k].index(target_v_type(v))
         url_template = param_info["tileSets"][0]["urlTemplate"]
         url = url_template.format(**template_dict)
         r, status_code, errors = get_request(url)
@@ -262,7 +285,6 @@ class DataHandler(object):
             if param_type == "TiledNdArray":
                 shape = [s for s in r["shape"] if s != 1]  # Don't make length-1 dims.
                 array = np.array(r["values"], dtype=r['dataType']).reshape(shape)
-                # data = self._build_geoviews(array, param)
             else:
                 raise NotImplementedError(f"Cannot process parameter type {param_type!r}")
         if errors is not None:

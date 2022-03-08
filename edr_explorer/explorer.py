@@ -20,6 +20,8 @@ class EDRExplorer(param.Parameterized):
     datasets = widgets.SelectMultiple(options=[], description="Datasets", disabled=True)
     start_time = widgets.Dropdown(options=[], description='Start Date', disabled=True)
     end_time = widgets.Dropdown(options=[], description='End Date', disabled=True)
+    start_z = widgets.Dropdown(options=[], description='Z Lower', disabled=True)
+    end_z = widgets.Dropdown(options=[], description='Z Upper', disabled=True)
 
     # Error display widgets.
     connect_error_box = widgets.HTML("", layout=widgets.Layout(display="none"))
@@ -27,6 +29,7 @@ class EDRExplorer(param.Parameterized):
 
     # Plot control widgets.
     pc_times = widgets.SelectionSlider(options=[""], description="Timestep", disabled=True)
+    pc_zs = widgets.SelectionSlider(options=[""], description="Z Level", disabled=True)
     pc_params = widgets.Dropdown(options=[], description="Parameter", disabled=True)
     use_colours = pn.widgets.Checkbox(name="Use supplied colours", disabled=True)
     use_levels = pn.widgets.Checkbox(name="Use supplied levels", disabled=True)
@@ -48,11 +51,11 @@ class EDRExplorer(param.Parameterized):
     )
 
     # Lists and boxes aggregating multiple widgets.
-    wlist = [coll, locations, datasets, start_time, end_time]  # Metadata widgets.
-    pwlist = [pc_times, pc_params]  # Plot widgets.
+    wlist = [coll, locations, datasets, start_time, end_time, start_z, end_z]  # Metadata widgets.
+    pwlist = [pc_times, pc_zs, pc_params]  # Plot widgets.
     pchecklist = [use_colours, use_levels]
     wbox = widgets.VBox(wlist)
-    pwbox = pn.Row(*pwlist, pn.Column(*pchecklist))
+    pwbox = pn.Row(pn.Column(*pwlist[:2]), pwlist[-1], pn.Column(*pchecklist))
 
     def __init__(self, server_address=None):
         """
@@ -74,6 +77,8 @@ class EDRExplorer(param.Parameterized):
         # Class properties.
         self._edr_interface = None
         self._dataset = None
+        self._no_t = "No t values in collection"
+        self._no_z = "No z values in collection"
 
         # Plot.
         self.plot = gv.DynamicMap(self.make_plot)
@@ -86,7 +91,9 @@ class EDRExplorer(param.Parameterized):
         # Watches on widgets.
         self.coll.observe(self._populate_contents_callback, names='value')
         self.start_time.observe(self._filter_end_time, names='value')
+        self.start_z.observe(self._filter_end_z, names='value')
         self.pc_times.observe(self._plot_change, names='value')
+        self.pc_zs.observe(self._plot_change, names='value')
         self.pc_params.observe(self._plot_change, names='value')
         self.use_colours.param.watch(self._checkbox_change, "value", onlychanged=True)
         self.use_levels.param.watch(self._checkbox_change, "value", onlychanged=True)
@@ -269,12 +276,24 @@ class EDRExplorer(param.Parameterized):
         """
         collection_id = change["new"]
         if collection_id is not None:
+            # Parameters and locations.
             self._populate_params(collection_id)
             locs = self.edr_interface.get_locations(collection_id)
             self.locations.options = locs
-            times, _ = self.edr_interface.get_temporal_extent(collection_id)
+            # Times.
+            if self.edr_interface.has_temporal_extent(collection_id):
+                times, _ = self.edr_interface.get_temporal_extent(collection_id)
+            else:
+                times = [self._no_t]
             self.start_time.options = times
             self.end_time.options = times
+            # Vertical levels.
+            if self.edr_interface.has_vertical_extent(collection_id):
+                zs, _ = self.edr_interface.get_vertical_extent(collection_id)
+            else:
+                zs = [self._no_z]
+            self.start_z.options = zs
+            self.end_z.options = zs
 
     def _populate_params(self, collection_id):
         """
@@ -301,6 +320,19 @@ class EDRExplorer(param.Parameterized):
             times = self.start_time.options
             sel_idx = times.index(start_time_selected)
             self.end_time.options = times[sel_idx:]
+
+    def _filter_end_z(self, change):
+        """
+        Only show end vertical values in the `End Z` widget that are greater than
+        the value selected in the `Start Z` widget.
+
+        """
+        start_z_selected = change["new"]
+        if start_z_selected is not None:
+            # Avoid errors when clearing widget state.
+            zs = self.start_z.options
+            sel_idx = zs.index(start_z_selected)
+            self.end_z.options = zs[sel_idx:]
 
     def _get_dataset(self, _):
         """
@@ -336,9 +368,17 @@ class EDRExplorer(param.Parameterized):
         locations = self.locations.value
         start_date = self.start_time.value
         end_date = self.end_time.value
+        start_z = self.start_z.value
+        end_z = self.end_z.value
 
         # Get dataset.
-        self.edr_interface.query_locations(coll_id, locations, param_names, start_date, end_date)
+        dates = [start_date, end_date] if start_date != self._no_t else None
+        zs = [start_z, end_z] if start_z != self._no_z else None
+        self.edr_interface.query_locations(
+            coll_id, locations, param_names,
+            dates=dates,
+            zs=zs
+        )
 
         error_box = "data_error_box"
         if self.edr_interface.errors is None:
@@ -346,9 +386,19 @@ class EDRExplorer(param.Parameterized):
             self._populate_error_box(error_box, "")
         if self.edr_interface.data_handler is not None and self.edr_interface.errors is None:
             # Generate and enable the plot controls.
-            plot_control_times = list(self.edr_interface.data_handler.coords["t"])
+            if self.edr_interface.has_temporal_extent(coll_id):
+                plot_control_times = list(self.edr_interface.data_handler.coords["t"])
+            else:
+                plot_control_times = [self._no_t]
             self.pc_times.options = plot_control_times
             self.pc_times.value = plot_control_times[0]
+
+            if self.edr_interface.has_vertical_extent(coll_id):
+                plot_control_zs = list(self.edr_interface.data_handler.coords["z"])
+            else:
+                plot_control_zs = [self._no_z]
+            self.pc_zs.options = plot_control_zs
+            self.pc_zs.value = plot_control_zs[0]
 
             plot_control_params = list(param_names)
             self.pc_params.options = list(filter(lambda o: o[1] in plot_control_params, self.datasets.options))
@@ -368,10 +418,20 @@ class EDRExplorer(param.Parameterized):
         """
         param = self.pc_params.value
         t = self.pc_times.value
+        z = self.pc_zs.value
+        can_request_data = False
         self._check_enable_checkboxes()
-        # Make sure both widgets are populated.
-        if param is not None and t not in (None, ""):
-            self._data_key = self.edr_interface.data_handler.make_key(param, {"t": t})
+
+        value_dict = {}
+        if t not in (None, "", self._no_t):
+            value_dict.update({"t": t})
+            can_request_data = True
+        if z not in (None, "", self._no_z):
+            value_dict.update({"z": z})
+            can_request_data = True
+
+        if param is not None and can_request_data:
+            self._data_key = self.edr_interface.data_handler.make_key(param, value_dict)
             print(f"Data key: {self._data_key}")
 
     @param.depends('_data_key', '_colours', '_levels', 'cmap', 'alpha')
