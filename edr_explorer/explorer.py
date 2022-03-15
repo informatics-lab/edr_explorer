@@ -282,14 +282,14 @@ class EDRExplorer(param.Parameterized):
             self.locations.options = locs
             # Times.
             if self.edr_interface.has_temporal_extent(collection_id):
-                times, _ = self.edr_interface.get_temporal_extent(collection_id)
+                times = self.edr_interface.get_temporal_extent(collection_id)
             else:
                 times = [self._no_t]
             self.start_time.options = times
             self.end_time.options = times
             # Vertical levels.
             if self.edr_interface.has_vertical_extent(collection_id):
-                zs, _ = self.edr_interface.get_vertical_extent(collection_id)
+                zs = self.edr_interface.get_vertical_extent(collection_id)
             else:
                 zs = [self._no_z]
             self.start_z.options = zs
@@ -432,7 +432,6 @@ class EDRExplorer(param.Parameterized):
 
         if param is not None and can_request_data:
             self._data_key = self.edr_interface.data_handler.make_key(param, value_dict)
-            print(f"Data key: {self._data_key}")
 
     @param.depends('_data_key', '_colours', '_levels', 'cmap', 'alpha')
     def make_plot(self):

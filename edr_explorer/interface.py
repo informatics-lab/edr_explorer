@@ -182,17 +182,11 @@ class EDRInterface(object):
 
     def get_spatial_extent(self, keys):
         """
-        Return the spatial (bounding-box) extent and coordinate reference system that
-        describes a collection defined by `keys`.
+        Return the spatial (bounding-box) extent of the collection defined by `keys`.
 
         """
         coll = self.get_collection(keys)
-        bbox = coll["extent"]["spatial"]["bbox"]
-        crs = coll["extent"]["spatial"]["crs"]
-        proj_re = re.search(r"DATUM\[\"(?P<crsref>[\w_]+)", crs)
-        proj_name = proj_re.group("crsref")
-        proj = CRS_LOOKUP[proj_name]
-        return bbox, proj
+        return coll["extent"]["spatial"]["bbox"]
 
     def has_temporal_extent(self, keys):
         """Determine whether a collection described by `keys` has a temporal extent section."""
@@ -202,24 +196,13 @@ class EDRInterface(object):
 
     def get_temporal_extent(self, keys):
         """
-        Return the time coordinate points and temporal reference system that
-        describes a collection defined by `keys`.
+        Return the time coordinate points for the collection defined by `keys`.
 
         """
         coll = self.get_collection(keys)
         times = coll["extent"]["temporal"]
-        t_ref_sys_keyname = "trs"
         t_desc_keys = ["interval", "values"]
-        time_strings = times[t_desc_keys[1]]  # Presume we'll have explicit values.
-        trs = times[t_ref_sys_keyname]
-        trs_re = re.search(r"TDATUM\[\"(?P<trsref>[\w ]+)", trs)
-        if trs_re is not None:
-            trs_name = trs_re.group("trsref")
-        else:
-            # A risky temporary fallback. It would be better to properly parse the WKT.
-            trs_name = "Gregorian"
-        trs_ref = TRS_LOOKUP[trs_name]
-        return time_strings, trs_ref
+        return times[t_desc_keys[1]]  # Presume we'll have explicit values.
 
     def has_vertical_extent(self, keys):
         """Determine whether a collection described by `keys` has a vertical extent section."""
@@ -229,21 +212,13 @@ class EDRInterface(object):
 
     def get_vertical_extent(self, keys):
         """
-        Return the vertical coordinate points and vertical reference system that
-        describes a collection defined by `keys`.
+        Return the vertical coordinate points for the collection defined by `keys`.
 
         """
         coll = self.get_collection(keys)
         vertical = coll["extent"]["vertical"]
         z_desc_keys = ["interval", "values"]
-        z_values = vertical[z_desc_keys[1]]  # Presume we'll have explicit values.
-        vrs = vertical["vrs"]
-        # XXX replace this with proper WKT parsing. For now, just return the VRS.
-        # trs_re = re.search(r"TDATUM\[\"(?P<trsref>[\w ]+)", trs)
-        # trs_name = trs_re.group("trsref")
-        # trs_ref = TRS_LOOKUP[trs_name]
-        vrs_ref = vrs
-        return z_values, vrs_ref
+        return vertical[z_desc_keys[1]]  # Presume we'll have explicit values.
 
     def get_query_types(self, keys):
         """Return a list of the query types supported against a collection defined by `keys`."""
