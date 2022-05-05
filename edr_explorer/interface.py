@@ -15,7 +15,6 @@ class EDRInterface(object):
     """
 
     _collections_query_str = "collections/?f=json"
-    _locs_query_str = "collections/{coll_id}/locations/{loc_id}?{query_str}"
     _query_str = "collections/{coll_id}/{query_type}?{query_str}"
 
     def __init__(self, server_host):
@@ -253,55 +252,6 @@ class EDRInterface(object):
         """
         raise NotImplemented
 
-    def query_locations(self, coll_id, location, param_names, dates=None, zs=None):
-        """
-        Request data values and coordinate point arrays for a specific dataset provided
-        by the EDR Server. A `location` request is one of the specifically defined query
-        types in EDR, along with `position` and `items`, and is used for defining specific
-        areas of interest within the data that are to be made commonly available to all users
-        of the EDR Server.
-
-        The dataset is specified by the calling args:
-          * `coll_id` is an identifier for a collection
-          * `location` is an identifier for the location for which the data is provided
-          * `param_names` is a list of one or more datasets for which to retrieve data
-          * `dates`; `(start_date`, `end_date`) describe the temporal extent over which to retrieve data
-          * `zs`; `(start_z`, `end_z`) describe the vertical extent over which to retrieve data
-
-        One principle of EDR is to serve as little data as possible per query. Thus a data request
-        returns JSON describing coordinate arrays and an EDR Server location to hit for each dataset
-        specified by the request. For example, a query to retrieve data for multiple datasets
-        and datetime values will return EDR Server locations for each combination of dataset and]
-        datetime value. 
-
-        To avoid making all these requests consecutively, a closure function that
-        can be called to request the data array for a specific combination is returned, along with
-        the coordinate arrays that describe all the data being requested.
-
-        """
-        self.data_handler = None  # Reset the `data_handler` attribute.
-        query_type = "locations"
-        coll = self.get_collection(coll_id)
-        available_query_types = self.get_query_types(coll_id)
-        assert query_type in available_query_types, f"Query type {query_type!r} not supported by server."
-
-        if not isinstance(param_names, str):
-            param_names = ",".join(param_names)
-
-        query_str = f"parameter-name={param_names}"
-        if dates is not None:
-            query_str += f"&datetime={'/'.join(dates)}"
-        if zs is not None:
-            query_str += f"&z={'/'.join([str(z) for z in zs])}"
-
-        request_str = self._locs_query_str.format(
-            coll_id=coll["id"],
-            loc_id=location,
-            query_str=query_str
-        )
-        data_json = self._get_covjson(request_str)
-        self.data_handler = DataHandler(data_json)
-
     def query_items(self):
         """
         Request predefined data objects the EDR Server. An `items` request is one of the
@@ -318,11 +268,9 @@ class EDRInterface(object):
         # Set up the dict to format the query string based on query type.
         format_dict = dict(coll_id=coll["id"])
         if query_type == "locations":
-            # uri_str = self._locs_query_str
             loc_id = query_kwargs.pop("loc_id")
             format_dict["query_type"] = f"locations/{loc_id}"
         else:
-            # uri_str = self._generic_query_str
             format_dict["query_type"] = query_type
 
         # Construct the query string for the request.
