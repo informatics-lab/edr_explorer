@@ -374,10 +374,11 @@ class EDRExplorer(param.Parameterized):
         # Get dataset.
         dates = [start_date, end_date] if start_date != self._no_t else None
         zs = [start_z, end_z] if start_z != self._no_z else None
-        self.edr_interface.query_locations(
-            coll_id, locations, param_names,
-            dates=dates,
-            zs=zs
+        self.edr_interface.query(
+            coll_id, "locations", param_names,
+            loc_id=locations,
+            datetime=dates,
+            z=zs
         )
 
         error_box = "data_error_box"

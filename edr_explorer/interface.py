@@ -16,7 +16,7 @@ class EDRInterface(object):
 
     _collections_query_str = "collections/?f=json"
     _locs_query_str = "collections/{coll_id}/locations/{loc_id}?{query_str}"
-    _generic_query_str = "collections/{coll_id}/{query_type}?{query_str}"
+    _query_str = "collections/{coll_id}/{query_type}?{query_str}"
 
     def __init__(self, server_host):
         """
@@ -165,8 +165,11 @@ class EDRInterface(object):
         locations in the collection defined by `keys`.
 
         """
-        locs_json = self._get_locations_json(keys)
-        return [d["id"] for d in locs_json["features"]]
+        result = [None]
+        if "locations" in self.get_query_types(keys):
+            locs_json = self._get_locations_json(keys)
+            result = [d["id"] for d in locs_json["features"]]
+        return result
 
     def get_location_extents(self, keys, feature_id):
         """
@@ -306,44 +309,67 @@ class EDRInterface(object):
         It is used for returning whole dataset objects, such as NetCDF files.
         
         """
-        raise NotImplemented
+        raise NotImplementedError
 
-    def query(self, coll_id, query_type, **query_kwargs):
+    def _query(self, coll_id, query_type, param_names=None, **query_kwargs):
+        """Run a query to return data from the EDR Server."""
+        coll = self.get_collection(coll_id)
+
+        # Set up the dict to format the query string based on query type.
+        format_dict = dict(coll_id=coll["id"])
+        if query_type == "locations":
+            # uri_str = self._locs_query_str
+            loc_id = query_kwargs.pop("loc_id")
+            format_dict["query_type"] = f"locations/{loc_id}"
+        else:
+            # uri_str = self._generic_query_str
+            format_dict["query_type"] = query_type
+
+        # Construct the query string for the request.
+        parameter_str = "{key}={value}"
+        query_items = [parameter_str.format(key=k, value=v) for k, v in query_kwargs.items()]
+        if param_names is not None:
+            if not isinstance(param_names, str):
+                param_names = ",".join(param_names)
+            query_items.append(parameter_str.format(key="parameter-name", value=param_names))
+        query_str = "&".join(query_items)
+        format_dict["query_str"] = query_str
+
+        # Make the request and set up the data handler from the response.
+        query_uri = self._query_str.format(**format_dict)
+        data_json = self._get_covjson(query_uri)
+        self.data_handler = DataHandler(data_json)
+
+    def query(self, coll_id, query_type, param_names=None, **query_kwargs):
         """
-        Define a generic query to submit to the EDR Server. Args and kwargs:
+        Define a generic query to submit to the EDR Server.
+
+        Args and kwargs:
           * `coll_id` is an identifier for a collection
           * `query_type` is a valid query type to submit to the EDR Server. This can be one
-            of `radius`, `area`, `cube`, `trajectory` or `corridor`, but not all query types
-            are guaranteed to be supported by the EDR Server. An `AssertionError` will be raised
-            if the query type is not supported by the EDR Server.
-          * `query_kwargs`: multiple parameters to construct the parameter string of the query.
+            of `radius`, `area`, `cube`, `trajectory`, `corridor`, `position`, `locations`, `items`;
+            note that not all query types are guaranteed to be supported by the EDR Server.
+            An `AssertionError` will be raised if the query type is not supported by the EDR Server.
+            If `query_type` is set to `locations`, a location ID **must** be specified in
+            the query kwargs using the key `loc_id`.
+          * `param_names`: names of parameters, available in the collection defined by `coll_id`,
+            to return data for.
+          * `query_kwargs`: parameters to construct the parameter string of the query.
             Valid parameters vary between query types; check the EDR documentation for more
             information. Common parameter **keys** include `coords`, `parameter-name`, `z`, `datetime`,
             `crs` and `f` (for return type of the result from the EDR Server). **Values** _must_ be
             appropriately formatted strings.
 
-        Note that this can be used to submit a `position`, `location` or `items` query, but
-        specific helper methods are provided for those specifically-designed query types.
-
-        IMPORTANT! It is up to the calling scope to ensure that valid query kwargs are
+        Note: it is up to the calling scope to ensure that valid query kwargs are
         passed. No parameter validation is performed here; a query will be constructed
         and submitted to the EDR Server without further checks.
 
         """
         self.data_handler = None  # Reset the `data_handler` attribute.
-        coll = self.get_collection(coll_id)
+
+        # Confirm the EDR Server can handle the sort of query requested.
         available_query_types = self.get_query_types(coll_id)
-        assert query_type in available_query_types, f"Query type {query_type!r} not supported by server."
-
-        parameter_str = "{key}={value}"
-        query_items = [parameter_str.format(key=k, value=v) for k, v in query_kwargs.items()]
-        query_str = "&".join(query_items)
-
-        # XXX handle server errors in case of bad query strings?
-        query_uri = self._generic_query_str.format(
-            coll_id=coll["id"],
-            query_type=query_type,
-            query_str=query_str,
-        )
-        data_json = self._get_covjson(query_uri)
-        self.data_handler = DataHandler(data_json)
+        if query_type in available_query_types:
+            self._query(coll_id, query_type, param_names=param_names, **query_kwargs)
+        else:
+            self.errors = f"Query type {query_type!r} not supported by server."
