@@ -4,6 +4,7 @@ import geoviews as gv
 import holoviews as hv
 import panel as pn
 import param
+from shapely.geometry import Polygon as sPolygon, LineString as sLineString
 
 from .interface import EDRInterface
 from .lookup import CRS_LOOKUP
@@ -362,6 +363,38 @@ class EDRExplorer(param.Parameterized):
         dataset = make_dataset(self.edr_interface.data_handler, names_dict)
         self.dataset = dataset
 
+    def _geometry_stream_data(self, query_name):
+        """
+        Return the data attribute of the holoviews stream referenced by `query_name`.
+        
+        """
+        ref = f"_{query_name}_stream"
+        geom_stream = getattr(self, ref)
+        return geom_stream.data
+
+    def _geometry_query_is_defined(self, query_name):
+        """
+        Determine whether a geometry specified by `query_name` has been defined.
+        We determine this by checking if all the values in its x and y coords
+        are 0 - if they are, we assume it's in its default state and thus
+        undefined.
+
+        """
+        data = self._geometry_stream_data(query_name)
+        return all(data["xs"][0]) and all(data["ys"][0])
+
+    def _hv_stream_to_wkt(self, query_name):
+        """
+        Convert the data points in the geometry specified by `query_name` to
+        the appropriate Shapely geometry, and return the WKT string representation
+        of the geometry.
+        
+        """
+        constructor = sPolygon if query_name == "area" else sLineString
+        data = self._geometry_stream_data(query_name)
+        geom = constructor(zip(data["xs"][0], data["ys"][0]))
+        return geom.wkt
+
     def _request_plot_data(self, _):
         """
         Callback when the `submit` button is clicked.
@@ -379,15 +412,24 @@ class EDRExplorer(param.Parameterized):
         start_z = self.start_z.value
         end_z = self.end_z.value
 
-        # Get dataset.
+        # Define common query parameters.
         dates = [start_date, end_date] if start_date != self._no_t else None
         zs = [start_z, end_z] if start_z != self._no_z else None
-        self.edr_interface.query(
-            coll_id, "locations", param_names,
-            loc_id=locations,
-            datetime=dates,
-            z=zs
-        )
+        query_params = dict(datetime=dates, z=zs)
+
+        # Set query type.
+        if self._geometry_query_is_defined("area"):
+            query_type = "area"
+            query_params["coords"] = self._hv_stream_to_wkt(query_type)
+        elif self._geometry_query_is_defined("corridor"):
+            query_type = "corridor"
+            query_params["coords"] = self._hv_stream_to_wkt(query_type)
+        else:
+            query_type = "locations"
+            query_params["loc_id"] = locations
+
+        # Request dataset.
+        self.edr_interface.query(coll_id, query_type, param_names, **query_params)
 
         error_box = "data_error_box"
         if self.edr_interface.errors is None:
