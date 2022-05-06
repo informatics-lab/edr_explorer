@@ -1,6 +1,7 @@
 import ipywidgets as widgets
 
 import geoviews as gv
+import holoviews as hv
 import panel as pn
 import param
 
@@ -97,6 +98,13 @@ class EDRExplorer(param.Parameterized):
         self.pc_params.observe(self._plot_change, names='value')
         self.use_colours.param.watch(self._checkbox_change, "value", onlychanged=True)
         self.use_levels.param.watch(self._checkbox_change, "value", onlychanged=True)
+
+        # Items for geometry-based queries.
+        self._area_poly = None
+        self._corridor_path = None
+        self._area_stream = None
+        self._corridor_stream = None
+        self._query_tools()
 
     @property
     def edr_interface(self):
@@ -434,6 +442,29 @@ class EDRExplorer(param.Parameterized):
         if param is not None and can_request_data:
             self._data_key = self.edr_interface.data_handler.make_key(param, value_dict)
 
+    def _query_tools(self):
+        self._area_poly = hv.Polygons(
+            [[(0, 0), (0, 0)]]
+        ).opts(
+            line_color="gray", line_width=1.5, line_alpha=0.75,
+            fill_color="gray", fill_alpha=0.3,
+        )
+        self._corridor_path = hv.Path(
+            [[(0, 0), (0, 0)]]
+        ).opts(
+            color="gray", line_width=2, line_alpha=0.75,
+        )
+        self._area_stream = hv.streams.PolyDraw(
+            source=self._area_poly,
+            num_objects=1,
+            tooltip="Area Query Tool"
+        )
+        self._corridor_stream = hv.streams.PolyDraw(
+            source=self._corridor_path,
+            num_objects=1,
+            tooltip="Corridor Query Tool"
+        )
+
     @param.depends('_data_key', '_colours', '_levels', 'cmap', 'alpha')
     def make_plot(self):
         """Show data from a data request to the EDR Server on the plot."""
@@ -469,4 +500,4 @@ class EDRExplorer(param.Parameterized):
                     error_box,
                     "Unspecified error (plotting)"
                 )
-        return showable
+        return showable * self._area_poly * self._corridor_path
