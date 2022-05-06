@@ -285,6 +285,7 @@ class EDRInterface(object):
 
         # Make the request and set up the data handler from the response.
         query_uri = self._query_str.format(**format_dict)
+        print(query_uri)
         data_json = self._get_covjson(query_uri)
         self.data_handler = DataHandler(data_json)
 

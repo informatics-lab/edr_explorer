@@ -413,9 +413,11 @@ class EDRExplorer(param.Parameterized):
         end_z = self.end_z.value
 
         # Define common query parameters.
-        dates = [start_date, end_date] if start_date != self._no_t else None
-        zs = [start_z, end_z] if start_z != self._no_z else None
-        query_params = dict(datetime=dates, z=zs)
+        query_params = {}
+        if start_date != self._no_t:
+            query_params["dates"] = [start_date, end_date]
+        if start_z != self._no_z:
+            query_params["zs"] = [start_z, end_z]
 
         # Set query type.
         if self._geometry_query_is_defined("area"):
