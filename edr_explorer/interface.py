@@ -4,7 +4,7 @@ from edr_explorer.data import DataHandler
 
 from .data import DataHandler
 from .lookup import CRS_LOOKUP, TRS_LOOKUP
-from .util import dict_list_search, get_request
+from .util import dict_list_search, get_request, ISO8601Expander
 
 
 class EDRInterface(object):
@@ -203,8 +203,15 @@ class EDRInterface(object):
         """
         coll = self.get_collection(keys)
         times = coll["extent"]["temporal"]
-        t_desc_keys = ["interval", "values"]
-        return times[t_desc_keys[1]]  # Presume we'll have explicit values.
+        try:
+            t_values = times["values"]
+        except KeyError:
+            t_values = times["interval"]
+        datetime_strings = []
+        for value in t_values:
+            datetime_gen = ISO8601Expander(value)
+            datetime_strings.extend(datetime_gen.datetime_strings)
+        return datetime_strings
 
     def has_vertical_extent(self, keys):
         """Determine whether a collection described by `keys` has a vertical extent section."""

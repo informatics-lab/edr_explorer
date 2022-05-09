@@ -59,6 +59,9 @@ class EDRExplorer(param.Parameterized):
     wbox = widgets.VBox(wlist)
     pwbox = pn.Row(pn.Column(*pwlist[:2]), pwlist[-1], pn.Column(*pchecklist))
 
+    # Map projection code
+    web_mercator_epsg = "EPSG:3857"
+
     def __init__(self, server_address=None):
         """
         Set up a new `Panel` dashboard to use to explore the data presented by an
@@ -313,7 +316,7 @@ class EDRExplorer(param.Parameterized):
         params_dict = self.edr_interface.get_collection_parameters(collection_id)
         options = []
         for k, v in params_dict.items():
-            choice = f'{v["label"]} ({v["units"]})'
+            choice = f'{v["label"].replace("_", " ").title()} ({v["units"]})'
             options.append((choice, k))
         self.datasets.options = options
 
@@ -413,11 +416,11 @@ class EDRExplorer(param.Parameterized):
         end_z = self.end_z.value
 
         # Define common query parameters.
-        query_params = {}
+        query_params = {"crs": self.web_mercator_epsg}
         if start_date != self._no_t:
-            query_params["dates"] = [start_date, end_date]
+            query_params["datetime"] = "/".join([start_date, end_date])
         if start_z != self._no_z:
-            query_params["zs"] = [start_z, end_z]
+            query_params["z"] = [start_z, end_z]
 
         # Set query type.
         if self._geometry_query_is_defined("area"):

@@ -251,7 +251,7 @@ class ISO8601Expander(object):
         end_date = self._handle_datetime("end")
         repeat = self._handle_repeat()
         duration = self._handle_duration()
-        print(start_date, end_date, repeat, duration)
+        # print(start_date, end_date, repeat, duration)
         if start_date is not None and all([val is None for val in [end_date, duration]]):
             self.datetimes = [start_date]
         elif start_date is not None and end_date is not None:
