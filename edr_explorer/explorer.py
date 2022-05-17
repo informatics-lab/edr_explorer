@@ -1,7 +1,9 @@
 import ipywidgets as widgets
 
+import cartopy.crs as ccrs
 import geoviews as gv
 import holoviews as hv
+import numpy as np
 import panel as pn
 import param
 from shapely.geometry import Polygon as sPolygon, LineString as sLineString
@@ -395,7 +397,11 @@ class EDRExplorer(param.Parameterized):
         """
         constructor = sPolygon if query_name == "area" else sLineString
         data = self._geometry_stream_data(query_name)
-        geom = constructor(zip(data["xs"][0], data["ys"][0]))
+        xpoints, ypoints = np.array(data["xs"][0]), np.array(data["ys"][0])
+        wgs84_points = ccrs.PlateCarree().transform_points(
+            ccrs.Mercator(), xpoints, ypoints
+        )
+        geom = constructor(wgs84_points)
         return geom.wkt
 
     def _request_plot_data(self, _):
@@ -416,7 +422,7 @@ class EDRExplorer(param.Parameterized):
         end_z = self.end_z.value
 
         # Define common query parameters.
-        query_params = {"crs": self.web_mercator_epsg}
+        query_params = {"crs": "EPSG:4326"}
         if start_date != self._no_t:
             query_params["datetime"] = "/".join([start_date, end_date])
         if start_z != self._no_z:

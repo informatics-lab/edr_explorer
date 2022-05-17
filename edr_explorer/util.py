@@ -13,6 +13,7 @@ def get_request(uri):
     response = None
     status_code = None
     errors = None
+    print(uri)
     try:
         r = requests.get(uri)
     except Exception as e:

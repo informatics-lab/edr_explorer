@@ -35,6 +35,7 @@ class DataHandler(object):
         self.shape = None
         self._selection_axes = None
         self._all_query_keys = None
+        self._array = None
         self._all_data = None
         self._crs = None
         self._vrs = None
@@ -124,6 +125,16 @@ class DataHandler(object):
     @all_query_keys.setter
     def all_query_keys(self, value):
         self._all_query_keys = value
+
+    @property
+    def array(self):
+        if self._array is None:
+            self._get_data_json_values_array()
+        return self._array
+
+    @array.setter
+    def array(self, value):
+        self._array = value
 
     @property
     def all_data(self):
@@ -229,7 +240,11 @@ class DataHandler(object):
         ref_systems = self.data_json["domain"]["referencing"]
         axes_names = list(self.data_json["domain"]["axes"].keys())
         crs_axes = sorted(list(set(axes_names) & set(self.horizontal_axes_names)))
-        ref = dict_list_search(ref_systems, "coordinates", crs_axes)
+        try:
+            ref = dict_list_search(ref_systems, "coordinates", crs_axes)
+        except ValueError:
+            # Try reversing the CRS axes, just in case.
+            ref = dict_list_search(ref_systems, "coordinates", crs_axes[::-1])
         crs_type = ref["system"]["type"]
         self.crs = CRS_LOOKUP[crs_type]
 
@@ -247,6 +262,32 @@ class DataHandler(object):
         trs_type = ref["system"]["calendar"]
         self.trs = TRS_LOOKUP[trs_type]
 
+    def _get_data_json_values_array(self):
+        """
+        Data values can be provided directly in `self.data_json`.
+        In such a case, `ranges.<parameter_name>.values` will be set to a
+        list of values, which we can use directly without needing to make
+        further requests from the server to get data values. The data is
+        presented as a dictionary of `{parameter_name: NumPy array}` per
+        parameter in `self.data_json`.
+
+        """
+        result = {}
+        errors = []
+        for param_name, data_dict in self.data_json["ranges"].items():
+            values = data_dict.get("values")
+            if values is not None:
+                shape = [s for s in data_dict["shape"] if s != 1]  # Don't make length-1 dims.
+                array, e = self._json_list_to_nd_array(
+                    values, shape, data_dict['dataType']
+                )
+                result[param_name] = [] if array is None else array
+                if e is not None:
+                    errors.append(e)
+        if len(errors):
+            self.errors = errors
+        self.array = result
+
     def _build_geoviews(self, array, param_name):
         """Construct a GeoViews Dataset object from an nD array data response."""
         colours = self.get_colours(param_name)
@@ -254,12 +295,37 @@ class DataHandler(object):
             data = np.ma.masked_less(array, colours["vmin"])
         else:
             data = np.ma.masked_invalid(array)
+        # ds = HVDataset(
+        #     data=(self.coords["y"], self.coords["x"], data),
+        #     kdims=["latitude", "longitude"],
+        #     vdims=param_name,
+        # )
         ds = HVDataset(
-            data=(self.coords["y"], self.coords["x"], data),
-            kdims=["latitude", "longitude"],
+            data=(self.coords["x"], self.coords["y"], data),
+            kdims=["longitude", "latitude"],
             vdims=param_name,
         )
         return ds.to(GVDataset, crs=self.crs)
+
+    def _json_list_to_nd_array(self, values, shape, dtype):
+        """
+        Translate a 1D list of data values from JSON to a NumPy array,
+        handling `NoneType` values by applying a mask at those points.
+        
+        """
+        a = np.array(values)
+        # Do we need to mask?
+        if any([v is None for v in values]):
+            fill_value = 999999 if dtype == "int" else 1e20
+            a[a == None] = fill_value
+            a = np.ma.masked_equal(a, fill_value)
+        result = None
+        errors = None
+        try:
+            result = a.astype(dtype).reshape(shape)
+        except Exception as e:
+            errors = " ".join(e.args)
+        return result, errors
 
     def _request_data(self, param, coords_dict):
         """
@@ -284,7 +350,10 @@ class DataHandler(object):
         if r is not None:
             if param_type == "TiledNdArray":
                 shape = [s for s in r["shape"] if s != 1]  # Don't make length-1 dims.
-                array = np.array(r["values"], dtype=r['dataType']).reshape(shape)
+                result, errors = self._json_list_to_nd_array(r["values"], shape, r['dataType'])
+                if errors is None:
+                    array = result
+                # array = np.array(r["values"], dtype=r['dataType']).reshape(shape)
             else:
                 raise NotImplementedError(f"Cannot process parameter type {param_type!r}")
         if errors is not None:
@@ -297,13 +366,21 @@ class DataHandler(object):
     def get_item(self, param, coords_dict, dataset=True):
         """Get a single dataset from the data cache, or populate it into the cache if not present."""
         key = self.make_key(param, coords_dict)
-        if self.cache.get(key) is not None:
+        if self.array.get(param) is not None:
+            a = self.array[param]
+            indices = self._build_indexer(param, coords_dict)
+            result = a[indices].squeeze()  # Drop length-1 dims.
+        elif self.cache.get(key) is not None:
             result = self.cache[key]
         else:
             result = self._request_data(param, coords_dict)
             self.cache[key] = result
         if dataset:
-            result = self._build_geoviews(result, param)
+            try:
+                result = self._build_geoviews(result, param)
+            except Exception as e:
+                self.errors = " ".join(e.args)
+                result = None
         return result
 
     def get_colours(self, param_name):
@@ -346,10 +423,10 @@ class DataHandler(object):
             colours = list(categories.keys())
             values = list(categories.values())
             vmin, vmax = min(values), max(values)
-            high_value, = np.diff(values[-2:])
+            diff, = np.diff(values[-2:])
             result = {
                 "colours": colours,
-                "values": values + [high_value],
+                "values": values + [values[-1]+diff],
                 "vmin": vmin,
                 "vmax": vmax
             }
@@ -362,8 +439,25 @@ class DataHandler(object):
         )
         return [len(self.coords[axis]) for axis in axes]
 
-    def build_data_array(self, param_name):
+    def _build_indexer(self, param_name, coords_dict):
+        """
+        Construct an indexer (a tuple of `Slice`s) to access a specific,
+        coordinate value based, subset of a larger array.
+
+        """
         axis_names = self.data_json["ranges"][param_name]["axisNames"]
+        axes = list(coords_dict.keys())
+        indices = [slice(None)] * len(axis_names)
+        for axis in axes:
+            data_val = (coords_dict[axis])
+            data_idx = self.coords[axis].index(data_val)
+            axis_idx = axis_names.index(axis)
+            slc = slice(data_idx, data_idx+1)
+            indices[axis_idx] = slc
+        return tuple(indices)
+
+    def build_data_array(self, param_name):
+        # axis_names = self.data_json["ranges"][param_name]["axisNames"]
         relevant_queries = filter(
             lambda q: q[0] == param_name,
             self.all_query_keys
@@ -372,16 +466,17 @@ class DataHandler(object):
         for query in relevant_queries:
             param, coords_dict = query
             array = self.get_item(param, coords_dict, dataset=False)
+            insertion_inds = self._build_indexer(param, coords_dict)
 
-            axes = list(coords_dict.keys())
-            insertion_inds = [slice(None)] * len(axis_names)
-            for axis in axes:
-                data_val = (coords_dict[axis])
-                data_idx = self.coords[axis].index(data_val)
-                insert_idx = axis_names.index(axis)
-                slc = slice(data_idx, data_idx+1)
-                insertion_inds[insert_idx] = slc
-            template_array[tuple(insertion_inds)] = array
+            # axes = list(coords_dict.keys())
+            # insertion_inds = [slice(None)] * len(axis_names)
+            # for axis in axes:
+            #     data_val = (coords_dict[axis])
+            #     data_idx = self.coords[axis].index(data_val)
+            #     insert_idx = axis_names.index(axis)
+            #     slc = slice(data_idx, data_idx+1)
+            #     insertion_inds[insert_idx] = slc
+            template_array[insertion_inds] = array
         return template_array
 
     def get_all_data(self):
