@@ -295,11 +295,6 @@ class DataHandler(object):
             data = np.ma.masked_less(array, colours["vmin"])
         else:
             data = np.ma.masked_invalid(array)
-        # ds = HVDataset(
-        #     data=(self.coords["y"], self.coords["x"], data),
-        #     kdims=["latitude", "longitude"],
-        #     vdims=param_name,
-        # )
         ds = HVDataset(
             data=(self.coords["x"], self.coords["y"], data),
             kdims=["longitude", "latitude"],
@@ -353,7 +348,6 @@ class DataHandler(object):
                 result, errors = self._json_list_to_nd_array(r["values"], shape, r['dataType'])
                 if errors is None:
                     array = result
-                # array = np.array(r["values"], dtype=r['dataType']).reshape(shape)
             else:
                 raise NotImplementedError(f"Cannot process parameter type {param_type!r}")
         if errors is not None:
