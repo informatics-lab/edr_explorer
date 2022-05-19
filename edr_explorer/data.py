@@ -446,7 +446,6 @@ class DataHandler(object):
         return tuple(indices)
 
     def build_data_array(self, param_name):
-        # axis_names = self.data_json["ranges"][param_name]["axisNames"]
         relevant_queries = filter(
             lambda q: q[0] == param_name,
             self.all_query_keys
@@ -456,15 +455,6 @@ class DataHandler(object):
             param, coords_dict = query
             array = self.get_item(param, coords_dict, dataset=False)
             insertion_inds = self._build_indexer(param, coords_dict)
-
-            # axes = list(coords_dict.keys())
-            # insertion_inds = [slice(None)] * len(axis_names)
-            # for axis in axes:
-            #     data_val = (coords_dict[axis])
-            #     data_idx = self.coords[axis].index(data_val)
-            #     insert_idx = axis_names.index(axis)
-            #     slc = slice(data_idx, data_idx+1)
-            #     insertion_inds[insert_idx] = slc
             template_array[insertion_inds] = array
         return template_array
 

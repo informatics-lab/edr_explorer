@@ -22,7 +22,6 @@ def get_request(uri):
         response = r.json()
         status_code = r.status_code
         if "code" in response.keys():
-            # and "message" in response.keys():
             message_key_name = list(set(response.keys()) - set(["code"]))[0]
             status_code = response["code"]
             errors = response[message_key_name]
