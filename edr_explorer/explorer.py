@@ -1,8 +1,12 @@
 import ipywidgets as widgets
 
+import cartopy.crs as ccrs
 import geoviews as gv
+import holoviews as hv
+import numpy as np
 import panel as pn
 import param
+from shapely.geometry import Polygon as sPolygon, LineString as sLineString
 
 from .interface import EDRInterface
 from .lookup import CRS_LOOKUP
@@ -57,6 +61,9 @@ class EDRExplorer(param.Parameterized):
     wbox = widgets.VBox(wlist)
     pwbox = pn.Row(pn.Column(*pwlist[:2]), pwlist[-1], pn.Column(*pchecklist))
 
+    # Map projection code
+    web_mercator_epsg = "EPSG:3857"
+
     def __init__(self, server_address=None):
         """
         Set up a new `Panel` dashboard to use to explore the data presented by an
@@ -97,6 +104,13 @@ class EDRExplorer(param.Parameterized):
         self.pc_params.observe(self._plot_change, names='value')
         self.use_colours.param.watch(self._checkbox_change, "value", onlychanged=True)
         self.use_levels.param.watch(self._checkbox_change, "value", onlychanged=True)
+
+        # Items for geometry-based queries.
+        self._area_poly = None
+        self._corridor_path = None
+        self._area_stream = None
+        self._corridor_stream = None
+        self._query_tools()
 
     @property
     def edr_interface(self):
@@ -304,7 +318,7 @@ class EDRExplorer(param.Parameterized):
         params_dict = self.edr_interface.get_collection_parameters(collection_id)
         options = []
         for k, v in params_dict.items():
-            choice = f'{v["label"]} ({v["units"]})'
+            choice = f'{v["label"].replace("_", " ").title()} ({v["units"]})'
             options.append((choice, k))
         self.datasets.options = options
 
@@ -354,6 +368,49 @@ class EDRExplorer(param.Parameterized):
         dataset = make_dataset(self.edr_interface.data_handler, names_dict)
         self.dataset = dataset
 
+    def _geometry_stream_data(self, query_name):
+        """
+        Return the data attribute of the holoviews stream referenced by `query_name`.
+        
+        """
+        ref = f"_{query_name}_stream"
+        geom_stream = getattr(self, ref)
+        return geom_stream.data
+
+    def _geometry_query_is_defined(self, query_name):
+        """
+        Determine whether a geometry specified by `query_name` has been defined.
+        We determine this by checking if all the values in its x and y coords
+        are 0 - if they are, we assume it's in its default state and thus
+        undefined.
+
+        """
+        data = self._geometry_stream_data(query_name)
+        return all(data["xs"][0]) and all(data["ys"][0])
+
+    def _hv_stream_to_wkt(self, query_name):
+        """
+        Convert the data points in the geometry specified by `query_name` to
+        the appropriate Shapely geometry, and return the WKT string representation
+        of the geometry.
+        
+        """
+        constructor = sPolygon if query_name == "area" else sLineString
+        data = self._geometry_stream_data(query_name)
+        xpoints, ypoints = np.array(data["xs"][0]), np.array(data["ys"][0])
+        wgs84_points = ccrs.PlateCarree().transform_points(
+            ccrs.Mercator(), xpoints, ypoints
+        )
+        result = None
+        errors = None
+        try:
+            geom = constructor(wgs84_points)
+        except ValueError:
+            errors = f"Invalid {query_name!r} geometry provided"
+        else:
+            result = geom.wkt
+        return result, errors
+
     def _request_plot_data(self, _):
         """
         Callback when the `submit` button is clicked.
@@ -371,15 +428,39 @@ class EDRExplorer(param.Parameterized):
         start_z = self.start_z.value
         end_z = self.end_z.value
 
-        # Get dataset.
-        dates = [start_date, end_date] if start_date != self._no_t else None
-        zs = [start_z, end_z] if start_z != self._no_z else None
-        self.edr_interface.query(
-            coll_id, "locations", param_names,
-            loc_id=locations,
-            datetime=dates,
-            z=zs
-        )
+        # Define common query parameters.
+        query_params = {"crs": "EPSG:4326"}
+        if start_date != self._no_t:
+            query_params["datetime"] = "/".join([start_date, end_date])
+        if start_z != self._no_z:
+            query_params["z"] = [start_z, end_z]
+
+        # Set query type.
+        query_type = None
+        errors = None
+        query_types = ["area", "corridor"]
+        for qtype in query_types:
+            if self._geometry_query_is_defined(qtype):
+                print(f"Query type: {qtype}")
+                query_type = qtype
+                coords, errors = self._hv_stream_to_wkt(query_type)
+                if coords is not None:
+                    query_params["coords"] = coords
+        if query_type is None:
+            query_type = "locations"
+            query_params["loc_id"] = locations
+
+        # Request dataset.
+        self.edr_interface.query(coll_id, query_type, param_names, **query_params)
+
+        # Collect coords and query errors, if present.
+        all_errors = []
+        if errors is not None:
+            all_errors.append(errors)
+        if self.edr_interface.errors is not None:
+            all_errors.append(self.edr_interface.errors)
+        if len(all_errors):
+            self.edr_interface.errors = "\n".join(all_errors)
 
         error_box = "data_error_box"
         if self.edr_interface.errors is None:
@@ -409,7 +490,7 @@ class EDRExplorer(param.Parameterized):
         elif self.edr_interface.errors is not None:
             self._populate_error_box(error_box, self.edr_interface.errors)
         else:
-            self._populate_error_box(error_box, "UnspecifiedError (data retrieval)")
+            self._populate_error_box(error_box, "Uncaught error (data retrieval)")
 
     def _plot_change(self, _):
         """
@@ -433,6 +514,29 @@ class EDRExplorer(param.Parameterized):
 
         if param is not None and can_request_data:
             self._data_key = self.edr_interface.data_handler.make_key(param, value_dict)
+
+    def _query_tools(self):
+        self._area_poly = hv.Polygons(
+            [[(0, 0), (0, 0)]]
+        ).opts(
+            line_color="gray", line_width=1.5, line_alpha=0.75,
+            fill_color="gray", fill_alpha=0.3,
+        )
+        self._corridor_path = hv.Path(
+            [[(0, 0), (0, 0)]]
+        ).opts(
+            color="gray", line_width=2, line_alpha=0.75,
+        )
+        self._area_stream = hv.streams.PolyDraw(
+            source=self._area_poly,
+            num_objects=1,
+            tooltip="Area Query Tool"
+        )
+        self._corridor_stream = hv.streams.PolyDraw(
+            source=self._corridor_path,
+            num_objects=1,
+            tooltip="Corridor Query Tool"
+        )
 
     @param.depends('_data_key', '_colours', '_levels', 'cmap', 'alpha')
     def make_plot(self):
@@ -469,4 +573,4 @@ class EDRExplorer(param.Parameterized):
                     error_box,
                     "Unspecified error (plotting)"
                 )
-        return showable
+        return showable * self._area_poly * self._corridor_path
