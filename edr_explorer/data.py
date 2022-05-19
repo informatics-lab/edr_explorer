@@ -190,7 +190,16 @@ class DataHandler(object):
             ehelp = f"Generate a key using {self.__class__.__name__}.make_key()."
             raise KeyError(f"{emsg}\n{ehelp}")
         param, coords_dict = self.from_key(key)
-        return self.get_item(param, coords_dict)
+        try:
+            result = self.get_item(param, coords_dict)
+        except Exception as e:
+            self.errors = " ".join(e.args)
+            result = None
+        else:
+            # Handle and allow other methods to write to `self.errors`.
+            if self.errors is not None:
+                result = None
+        return result
 
     def _build_coord_points(self, d):
         """
@@ -278,14 +287,10 @@ class DataHandler(object):
             values = data_dict.get("values")
             if values is not None:
                 shape = [s for s in data_dict["shape"] if s != 1]  # Don't make length-1 dims.
-                array, e = self._json_list_to_nd_array(
+                array = self._json_list_to_nd_array(
                     values, shape, data_dict['dataType']
                 )
                 result[param_name] = [] if array is None else array
-                if e is not None:
-                    errors.append(e)
-        if len(errors):
-            self.errors = errors
         self.array = result
 
     def _build_geoviews(self, array, param_name):
@@ -314,13 +319,7 @@ class DataHandler(object):
             fill_value = 999999 if dtype == "int" else 1e20
             a[a == None] = fill_value
             a = np.ma.masked_equal(a, fill_value)
-        result = None
-        errors = None
-        try:
-            result = a.astype(dtype).reshape(shape)
-        except Exception as e:
-            errors = " ".join(e.args)
-        return result, errors
+        return a.astype(dtype).reshape(shape)
 
     def _request_data(self, param, coords_dict):
         """
@@ -345,7 +344,7 @@ class DataHandler(object):
         if r is not None:
             if param_type == "TiledNdArray":
                 shape = [s for s in r["shape"] if s != 1]  # Don't make length-1 dims.
-                result, errors = self._json_list_to_nd_array(r["values"], shape, r['dataType'])
+                result = self._json_list_to_nd_array(r["values"], shape, r['dataType'])
                 if errors is None:
                     array = result
             else:
@@ -370,11 +369,7 @@ class DataHandler(object):
             result = self._request_data(param, coords_dict)
             self.cache[key] = result
         if dataset:
-            try:
-                result = self._build_geoviews(result, param)
-            except Exception as e:
-                self.errors = " ".join(e.args)
-                result = None
+            result = self._build_geoviews(result, param)
         return result
 
     def get_colours(self, param_name):
