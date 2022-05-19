@@ -401,8 +401,15 @@ class EDRExplorer(param.Parameterized):
         wgs84_points = ccrs.PlateCarree().transform_points(
             ccrs.Mercator(), xpoints, ypoints
         )
-        geom = constructor(wgs84_points)
-        return geom.wkt
+        result = None
+        errors = None
+        try:
+            geom = constructor(wgs84_points)
+        except ValueError:
+            errors = f"Invalid {query_name!r} geometry provided"
+        else:
+            result = geom.wkt
+        return result, errors
 
     def _request_plot_data(self, _):
         """
@@ -429,18 +436,31 @@ class EDRExplorer(param.Parameterized):
             query_params["z"] = [start_z, end_z]
 
         # Set query type.
-        if self._geometry_query_is_defined("area"):
-            query_type = "area"
-            query_params["coords"] = self._hv_stream_to_wkt(query_type)
-        elif self._geometry_query_is_defined("corridor"):
-            query_type = "corridor"
-            query_params["coords"] = self._hv_stream_to_wkt(query_type)
-        else:
+        query_type = None
+        errors = None
+        query_types = ["area", "corridor"]
+        for qtype in query_types:
+            if self._geometry_query_is_defined(qtype):
+                print(f"Query type: {qtype}")
+                query_type = qtype
+                coords, errors = self._hv_stream_to_wkt(query_type)
+                if coords is not None:
+                    query_params["coords"] = coords
+        if query_type is None:
             query_type = "locations"
             query_params["loc_id"] = locations
 
         # Request dataset.
         self.edr_interface.query(coll_id, query_type, param_names, **query_params)
+
+        # Collect coords and query errors, if present.
+        all_errors = []
+        if errors is not None:
+            all_errors.append(errors)
+        if self.edr_interface.errors is not None:
+            all_errors.append(self.edr_interface.errors)
+        if len(all_errors):
+            self.edr_interface.errors = "\n".join(all_errors)
 
         error_box = "data_error_box"
         if self.edr_interface.errors is None:
@@ -470,7 +490,7 @@ class EDRExplorer(param.Parameterized):
         elif self.edr_interface.errors is not None:
             self._populate_error_box(error_box, self.edr_interface.errors)
         else:
-            self._populate_error_box(error_box, "UnspecifiedError (data retrieval)")
+            self._populate_error_box(error_box, "Uncaught error (data retrieval)")
 
     def _plot_change(self, _):
         """
