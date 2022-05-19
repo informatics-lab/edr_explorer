@@ -36,6 +36,7 @@ class EDRExplorer(param.Parameterized):
 
     # Parameters for triggering plot updates.
     _data_key = param.String("")
+    _data_bbox = param.Tuple(([-8, -1], [53, 58], CRS_LOOKUP["WGS_1984"]))  # Approximate UK extent.
     _colours = param.Boolean(use_colours.value)
     _levels = param.Boolean(use_levels.value)
     cmap = param.String("viridis")
@@ -81,6 +82,10 @@ class EDRExplorer(param.Parameterized):
         self._no_z = "No z values in collection"
 
         # Plot.
+        self.default_showable = gv.Image(
+            (self._data_bbox[0], self._data_bbox[1], [[0, 0], [0, 0]]),
+            crs=self._data_bbox[2],
+        ).opts(alpha=0.0)
         self.plot = gv.DynamicMap(self.make_plot)
 
         # Button click bindings.
@@ -203,6 +208,7 @@ class EDRExplorer(param.Parameterized):
             # The only state in which the controls can be populated and enabled.
             self.coll.options = [(ct, cid) for (cid, ct) in zip(self.edr_interface.collection_ids, self.edr_interface.collection_titles)]
             self.coll.value = self.edr_interface.collection_ids[0]
+            self._set_plot_extent()
             self._enable_controls()
         elif self.edr_interface.errors is not None:
             # We have known errors to show.
@@ -210,6 +216,12 @@ class EDRExplorer(param.Parameterized):
         else:
             # Something else has gone wrong, which we need to show.
             self._populate_error_box(error_box, "UnspecifiedError")
+
+    def _set_plot_extent(self):
+        """Set the extent of the plot based on the bbox info in a collection."""
+        bbox, proj = self.edr_interface.get_spatial_extent(self.coll.value)
+        [[xmin, ymin, xmax, ymax]] = bbox
+        self._data_bbox = ([xmin, xmax], [ymin, ymax], proj)
 
     def _enable_controls(self):
         """Enable query control widgets in the left column."""
@@ -434,13 +446,10 @@ class EDRExplorer(param.Parameterized):
         if param is not None and can_request_data:
             self._data_key = self.edr_interface.data_handler.make_key(param, value_dict)
 
-    @param.depends('_data_key', '_colours', '_levels', 'cmap', 'alpha')
+    @param.depends('_data_key', '_data_bbox', '_colours', '_levels', 'cmap', 'alpha')
     def make_plot(self):
         """Show data from a data request to the EDR Server on the plot."""
-        showable = gv.Image(
-            ([-8, -1], [53, 58], [[0, 0], [0, 0]]),  # Approximate UK extent.
-            crs=CRS_LOOKUP["WGS_1984"],
-        ).opts(alpha=0.0)
+        showable = None
         if self._data_key != "":
             dataset = self.edr_interface.data_handler[self._data_key]
             opts = {"cmap": self.cmap, "alpha": self.alpha, "colorbar": True}
@@ -469,4 +478,6 @@ class EDRExplorer(param.Parameterized):
                     error_box,
                     "Unspecified error (plotting)"
                 )
+        if showable is None:
+            showable = self.default_showable
         return showable
